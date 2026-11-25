@@ -1980,7 +1980,47 @@ function stumpWorld(e, fname, limb) {
   return { x: e.x + e.face * (st[0] - ax) * S, y: e.y - (e.airY || 0) + (st[1] - ay - 0.5) * S };
 }
 
+/* WALKING WITH PLANTED FEET. A walk frame isn't picked by the clock but by how far the body
+   has moved, so a foot on the floor stays on the floor while the body passes over it. The
+   stride is measured from the frames themselves: how far apart the feet are at the widest
+   step. Two steps make one full cycle. */
+const STRIDE = {};
+function strideOf(sheet, names) {
+  const key = sheet + ':' + names[0];
+  if (key in STRIDE) return STRIDE[key];
+  const set = FS[sheet]; let span = 0;
+  if (set) names.forEach(n => {
+    const fr = set.f[n]; if (!fr) return;
+    const m = set.meta, c = document.createElement('canvas'); c.width = m.w; c.height = m.h;
+    const g = c.getContext('2d');
+    if (fr.layers) { for (const k of DRAW_ORDER) if (fr.layers[k]) g.drawImage(fr.layers[k].img, 0, 0); } else g.drawImage(fr.img, 0, 0);
+    const px = g.getImageData(0, 0, m.w, m.h).data;
+    let bot = -1; for (let y = m.h - 1; y >= 0 && bot < 0; y--) for (let x = 0; x < m.w; x++) if (px[(y * m.w + x) * 4 + 3] > 40) { bot = y; break; }
+    let a = m.w, b = -1;                                   // the feet: the bottom two rows
+    for (let y = Math.max(0, bot - 1); y <= bot; y++) for (let x = 0; x < m.w; x++) if (px[(y * m.w + x) * 4 + 3] > 40) { a = Math.min(a, x); b = Math.max(b, x); }
+    if (b >= a) span = Math.max(span, b - a - 1);
+  });
+  const cycle = clamp(2 * span * SCALE, 16, 64);
+  return (STRIDE[key] = cycle);
+}
+function gaitFrame(a, sheet, names) {           // which frame of a walk cycle, from the distance walked
+  const cyc = strideOf(sheet, names), d = a.stepD || 0;
+  const fr = names[Math.floor((d % cyc) / cyc * names.length) % names.length];
+  if (a.gaitFr !== fr) { a.gaitFr = fr; a.gaitD0 = d; }
+  // the body follows the feet: while a foot is planted the drawn body lags behind the real
+  // position, and catches up as the next foot lands. A step, not a glide.
+  a.gaitOff = -Math.min(cyc / names.length, d - a.gaitD0) * 0.6 * (a.mdir || 0);
+  return fr;
+}
+function trackSteps(a) {                         // distance actually covered this tick (depth counts a bit less)
+  if (a.lx === undefined) { a.lx = a.x; a.ly = a.y; }
+  const d = Math.hypot(a.x - a.lx, (a.y - a.ly) * 0.8);
+  if (Math.abs(a.x - a.lx) > 0.05) a.mdir = Math.sign(a.x - a.lx);
+  if (d < 20) a.stepD = (a.stepD || 0) + d;       // a teleport isn't a step
+  a.lx = a.x; a.ly = a.y;
+}
 function enemyFrame(e) {
+  e.gaitOff = 0;
   const t = e.animT, set = FS[e.sprName].f;
   const cyc = (names, hold) => names[Math.floor(t / hold) % names.length];
   const has = n => !!set[n];
@@ -2034,9 +2074,9 @@ function enemyFrame(e) {
   if ((e.st === 'enter' || sp > 0.22) && e.prevSt !== 'enter' && t < 3 && e.st === 'idle' && has('walkIn')) return 'walkIn';
   if (e.st === 'enter' || sp > 0.22) {
     if (Math.abs(e.mvy || 0) > Math.abs(e.mvx || 0) * 1.3 && e.st !== 'enter') {
-      return cyc((e.mvy > 0 ? ['frontW0', 'frontW1', 'frontW2', 'frontW3'] : ['backW0', 'backW1', 'backW2', 'backW3']), 7);
+      return gaitFrame(e, e.sprName, e.mvy > 0 ? ['frontW0', 'frontW1', 'frontW2', 'frontW3'] : ['backW0', 'backW1', 'backW2', 'backW3']);
     }
-    return cyc(['walk0', 'walk1', 'walk2', 'walk3'], 6);
+    return gaitFrame(e, e.sprName, ['walk0', 'walk1', 'walk2', 'walk3']);
   }
   return cyc(['idle0', 'idle1'], 20);
 }
@@ -2082,7 +2122,9 @@ function timelineFrame(tl, mv, f) {
   return phasePick(tl.rec, e - mv.wind - mv.act, mv.rec);
 }
 
+const WALK6 = ['walk0', 'walk1', 'walk2', 'walk3', 'walk4', 'walk5'], RUN4 = ['run0', 'run1', 'run2', 'run3'];
 function playerFrame(p) {
+  p.gaitOff = 0;
   if (p.pose) return p.pose;                         // a cut-scene is posing him
   const t = p.animT;
   const cyc = (names, hold) => names[Math.floor(t / hold) % names.length];
@@ -2112,16 +2154,16 @@ function playerFrame(p) {
       if (p.prevSt === 'hurt' && t < 5) return 'hurtR';
       return cyc(['idle0', 'idle1'], 28);
     case 'walk':
-      if (p.view === 'front') return cyc(['frontW0', 'frontW1', 'frontW2', 'frontW3'], 5);
-      if (p.view === 'back')  return cyc(['backW0', 'backW1', 'backW2', 'backW3'], 5);
+      if (p.view === 'front') return gaitFrame(p, C().sheet, ['frontW0', 'frontW1', 'frontW2', 'frontW3']);
+      if (p.view === 'back')  return gaitFrame(p, C().sheet, ['backW0', 'backW1', 'backW2', 'backW3']);
       if (p.charge > 0 && T.charging) return 'hvyW1';
       if (p.skidT > 0) return 'skid';
       if (p.turnT > 0) return 'frontIdle';
       if (p.prevSt === 'idle' && t < 3) return 'walkIn';
-      return cyc(['walk0', 'walk1', 'walk2', 'walk3', 'walk4', 'walk5'], 4);
+      return gaitFrame(p, C().sheet, WALK6);
     case 'run':
       if (p.skidT > 0) return 'skid';
-      return cyc(['run0', 'run1', 'run2', 'run3'], 4);
+      return gaitFrame(p, C().sheet, ['run0', 'run1', 'run2', 'run3']);
     case 'block': case 'blockstun': return t < 2 && p.st === 'block' ? 'blockIn' : 'block';
     case 'hurt': return p.view === 'front' ? 'frontHurt' : (t < 7 ? 'hurt' : 'hurtR');
     case 'gassed': return 'gassed';
@@ -4274,7 +4316,7 @@ function hitPlayer(e, mv) {
 /* ============================== PLAYER ============================== */
 function updatePlayer() {
   const p = player;
-  stepClassTrait(p);
+  stepClassTrait(p); trackSteps(p);
   p.anim += (p.st === 'walk' ? 0.24 : 0.09);
   p.animT++;
   if (p.turnT > 0) p.turnT--;
@@ -4526,8 +4568,13 @@ function updatePlayer() {
     else p.view = 'side';
     const wind = T.charging && p.charge > 0 ? 0.45 : 1;      // you shuffle while winding up a heavy
     const spd = C().speed * (1 + (p.cad || 0) * 0.01) * (1 + perk('speed')) * (running ? C().runK * (1 + perk('run')) : 1);
-    p.vx += ix * (running ? 0.92 : 0.5) * wind * spd;
-    p.vy += iy * (running ? 0.52 : 0.42) * wind * spd;
+    let gait = 1;
+    if (wind === 1) {                                         // slowest as a foot lands, quickest as the other swings through
+      const cyc = strideOf(C().sheet, running ? RUN4 : WALK6), ph = ((p.stepD || 0) % cyc) / cyc;
+      gait = running ? 1 - 0.2 * Math.cos(4 * Math.PI * (ph - 1 / 8)) : 1 - 0.32 * Math.cos(4 * Math.PI * (ph - 1 / 12));
+    }
+    p.vx += ix * (running ? 0.92 : 0.5) * wind * spd * gait;
+    p.vy += iy * (running ? 0.52 : 0.42) * wind * spd * gait;
     if (running && p.animT % 9 === 0) burst(p.x - p.face * 6, p.y, 2, '#d7c3a1', 0.8);
   } else {
     if (p.st === 'run' && Math.abs(p.vx) > 2) { p.skidT = 9; dust(p.x + p.face * 6, p.y, 4); }
@@ -5346,6 +5393,7 @@ function steerEnemy(e, dx, dy, dist) {
 }
 
 function updateEnemy(e) {
+  trackSteps(e);
   if (e.held) { e.animT++; return; }
   if (e.finLock) { e.animT++; if (e.f > 0) e.f--; return; }     // being finished
   e.animT++;
@@ -8132,13 +8180,15 @@ function drawActorBody(a, isP) {
   if (isP && a.iframes > 0 && !flowing && Math.floor(a.iframes / 3) % 2 === 0) ctx.globalAlpha = 0.42;
 
   if (isP && PF) {
-    drawPlayerFrame(a, a.x + lean, gy + yoff, mode);
-    if (a.weapon && !['down', 'mantle', 'roll', 'cutter', 'finish'].includes(a.st)) drawHeldWeapon(a, a.x + lean, gy + yoff);
+    playerFrame(a); const gx = a.x + lean + (a.gaitOff || 0);
+    drawPlayerFrame(a, gx, gy + yoff, mode);
+    if (a.weapon && !['down', 'mantle', 'roll', 'cutter', 'finish'].includes(a.st)) drawHeldWeapon(a, gx, gy + yoff);
   } else if (!isP && FS[a.sprName]) {
     let push = 0;
     if (a.moveName === 'headbutt' && a.st === 'act') push = a.face * 8;
     if (a.crawl && a.st === 'act') push = a.face * 6;
-    drawCharFrame(a.sprName, enemyFrame(a), a.x + lean + push, gy + yoff, a.face, mode, 0, a.missing);
+    const efr = enemyFrame(a);
+    drawCharFrame(a.sprName, efr, a.x + lean + push + (a.gaitOff || 0), gy + yoff, a.face, mode, 0, a.missing);
   } else if (s.rig && a.st !== 'down') {
     drawRigged(s, s.rig, a.x + lean, gy + yoff, a.face, squash, stretch, mode, poseFor(a, isP));
   } else {
@@ -8784,7 +8834,7 @@ const TL = { k: 1, side: false };
 function pickScale(aw, ah) {
   const full = Math.min(aw / LW, ah / LH);
   if (!isTouch() || isPortrait()) return full;
-  const P = clamp(Math.round(ah * 0.27), 84, 124), need = P + 14;
+  const P = clamp(Math.round(ah * 0.3), 84, 136), need = P + 14;
   const side = Math.min((aw - 2 * need) / LW, ah / LH);
   TL.side = side >= full * 0.84;
   TL.P = TL.side ? P : clamp(Math.round(ah * 0.24), 80, 108);
@@ -8794,8 +8844,7 @@ function layoutTouch() {
   if (!isTouch()) return;
   const r = cv.getBoundingClientRect(), W = innerWidth, H = innerHeight;
   const lb = r.left, rb = W - r.right;
-  let P = TL.P || 110;
-  if (TL.side) P = Math.max(76, Math.min(P, Math.min(lb, rb) - 10));
+  let P = TL.side ? clamp(Math.round(H * 0.33), 96, 156) : (TL.P || 110);   // thumb-sized; may reach a little over the picture
   TL.k = P / 124;
   const set = (id, st) => { const el = document.getElementById(id); if (el) Object.assign(el.style, st); };
   const px = v => Math.round(v) + 'px';
@@ -8804,11 +8853,11 @@ function layoutTouch() {
   const B = Math.round(P * 0.47), Wh = Math.round(P * 0.36);
   const op = TL.side ? '' : '0.6';
   if (TL.side) {
-    const lc = lb / 2, rc = W - rb / 2;               // middle of each side bar
-    set('stick', { width: px(P), height: px(P), left: px(lc - P / 2), right: '', bottom: px(14), opacity: op });
-    set('apad', { width: px(P), height: px(P), right: px(W - rc - P / 2), left: '', bottom: px(14), opacity: op });
-    set('bBlock', { width: px(B), height: px(B), right: px(W - rc - B / 2), bottom: px(14 + P + 12), opacity: op });
-    set('bWhistle', { width: px(Wh), height: px(Wh), right: px(W - rc - Wh / 2), bottom: px(14 + P + 12 + B + 10), opacity: op });
+    const lc = Math.max(lb / 2, P / 2 + 16), rc = W - Math.max(rb / 2, P / 2 + 16), up = Math.max(22, Math.round(H * 0.09));
+    set('stick', { width: px(P), height: px(P), left: px(lc - P / 2), right: '', bottom: px(up), opacity: op });
+    set('apad', { width: px(P), height: px(P), right: px(W - rc - P / 2), left: '', bottom: px(up), opacity: op });
+    set('bBlock', { width: px(B), height: px(B), right: px(W - rc - B / 2), bottom: px(up + P + 10), opacity: op });
+    set('bWhistle', { width: px(Wh), height: px(Wh), right: px(W - rc - Wh / 2), bottom: px(up + P + 10 + B + 8), opacity: op });
     set('bPause', { right: px(W - rc - 18), top: px(10) });
   } else {
     set('stick', { width: px(P), height: px(P), left: px(8), right: '', bottom: px(8), opacity: op });
@@ -8972,6 +9021,7 @@ function boot() {
     ev: () => worldEv && { need: worldEv.need, phase: worldEv.phase, ko: worldEv.ko, total: worldEv.total, through: worldEv.through, wave: worldEv.wave },
     only: type => { flowOff = true; enemies.length = 0; spawnQ.length = 0; spawnEnemy(type); },
     spawn: type => spawnEnemy(type),
+    gait: () => ({ x: player.x, y: player.y, fr: playerFrame(player), off: player.gaitOff, st: player.st, d: player.stepD, cyc: strideOf(C().sheet, WALK6), run: strideOf(C().sheet, ['run0', 'run1', 'run2', 'run3']) }),
     save: () => { saveCheckpoint(); return curSlot; },
     trait: () => ({ zen: player.zenT, cad: player.cad, peace: player.peaceT, hp: player.hp, max: player.maxhp, barks: enemies.filter(e => e.bark).map(e => e.type + ': ' + e.bark.txt) }),
     hitFoe: n => { const e = enemies.find(e => !e.dead && !e.crowd); for (let i = 0; i < n; i++) addCombo(); return !!e; },
