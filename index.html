@@ -4754,7 +4754,7 @@ function startChain(kind, threat, air) {
     const inReach = live.some(e => (e.x - p.x) * want > -6 && Math.abs(e.x - p.x) < mv.reach * 0.8);
     if (!inReach) {
       let tgt = null, bd = 1e9;
-      live.forEach(e => { const d = (e.x - p.x) * want; if (d > mv.reach * 0.6 && d < 150 && d < bd) { bd = d; tgt = e; } });
+      live.forEach(e => { const d = (e.x - p.x) * want; if (d > mv.reach * 0.6 && d < 50 && d < bd) { bd = d; tgt = e; } });   // a step in, not a swing across the room
       if (tgt) {
         p.face = want; p.lunge = { e: tgt, stop: Math.max(14, mv.reach * 0.55) };
         mv = Object.assign({}, mv, { wind: Math.max(mv.wind, 7) });
@@ -5699,7 +5699,7 @@ function updateEnemy(e) {
   if (e.hitByProp > 0) e.hitByProp--;
   if (e.crowd) { if (e.x > WALL_R + 60 || e.x < WALL_L - 60) e.exited = true; }
   if (e.leaving && e.x < WALL_L - 40) e.exited = true;
-  else e.x = clamp(e.x, WALL_L - 10, WALL_R + 10);
+  else if (!e.crowd) e.x = clamp(e.x, WALL_L - 10, WALL_R + 10);
   e.y = clamp(e.y, DEPTH_TOP, FLOOR_BOT);
   if (e.st !== 'enter' && e.st !== 'climb' && !(e.crowd && (e.ghost || e.x < WALL_L || e.x > WALL_R))) collideProps(e);
   enemyGround(e);
@@ -6102,7 +6102,7 @@ function titleTap(x, y) {
 
 /* ---------- settings and controls screens (from the title or the pause menu) ---------- */
 let menu = null;
-const SET_ITEMS = ['MUSIC', 'SOUND FX', 'BLOOD', 'SCREEN SHAKE', 'FLASHES', 'DIFFICULTY', 'STORY SCENES', 'ENEMY CARDS', 'SKILL TREE', 'FULLSCREEN', 'CONTROLS', 'BACK'];
+const SET_ITEMS = ['MUSIC', 'SOUND FX', 'BLOOD', 'SCREEN SHAKE', 'FLASHES', 'DIFFICULTY', 'STORY SCENES', 'ENEMY CARDS', 'SKILL TREE', 'PAD POSITION', 'PAD SIZE', 'FULLSCREEN', 'CONTROLS', 'BACK'];
 function openMenu(kind, from) { menu = { kind, from, sel: 0 }; A.tele(); ['space', 'enter', 'j', 'k', 'l'].forEach(k => { buf[k] = 0; }); }
 function closeMenu() { if (menu && menu.kind === 'controls' && menu.back) { menu = menu.back; return; } menu = null; saveSet(); A.tele(); }
 function setAdjust(it, d) {
@@ -6114,6 +6114,8 @@ function setAdjust(it, d) {
   else if (it === 'ENEMY CARDS') SET.cards = SET.cards === false;
   else if (it === 'SKILL TREE') SET.tree = SET.tree === 'manual' ? 'calm' : 'manual';
   else if (it === 'STORY SCENES') SET.story = SET.story === false;
+  else if (it === 'PAD POSITION') { SET.padPos = SET.padPos === 'low' ? 'mid' : 'low'; fit(); }
+  else if (it === 'PAD SIZE') { const o = ['s', 'm', 'l'], i = o.indexOf(SET.padSize || 'm'); SET.padSize = o[(i + (d < 0 ? 2 : 1)) % 3]; fit(); }
   else if (it === 'DIFFICULTY') {
     if (state === 'play' && menu.from === 'pause') { say(player.x, player.y - 60, 'CHANGE IT BETWEEN RUNS', '#ff5252'); return; }
     SET.diff = d ? clamp(SET.diff + d, 0, 2) : (SET.diff + 1) % 3;
@@ -6138,7 +6140,7 @@ function menuKey(k) {
     else setAdjust(it, it === 'MUSIC' || it === 'SOUND FX' ? (SET[it === 'MUSIC' ? 'music' : 'sfx'] >= 10 ? -10 : 1) : 0);
   }
 }
-const setRow = i => ({ x: LW / 2 - 110, y: 42 + i * 16, w: 220, h: 13 });
+const setRow = i => ({ x: LW / 2 - 110, y: 40 + i * 15, w: 220, h: 13 });
 function menuTap(x, y) {
   if (menu.kind === 'controls') { closeMenu(); return; }
   for (let i = 0; i < SET_ITEMS.length; i++) {
@@ -6175,6 +6177,8 @@ function drawMenu() {
     else if (it === 'ENEMY CARDS') val = on(SET.cards !== false);
     else if (it === 'SKILL TREE') val = SET.tree === 'manual' ? 'WHEN I ASK' : 'WHEN CLEAR';
     else if (it === 'STORY SCENES') val = on(SET.story !== false);
+    else if (it === 'PAD POSITION') val = SET.padPos === 'low' ? 'LOW' : 'MIDDLE';
+    else if (it === 'PAD SIZE') val = { s: 'SMALL', m: 'MEDIUM', l: 'LARGE' }[SET.padSize || 'm'];
     else if (it === 'DIFFICULTY') val = '< ' + DIFF().n + ' >';
     else if (it === 'FULLSCREEN') val = on(!!document.fullscreenElement);
     else if (it === 'CONTROLS') val = '>';
@@ -6182,7 +6186,7 @@ function drawMenu() {
   });
   ctx.textAlign = 'center'; ctx.font = '7px monospace'; ctx.fillStyle = '#6b6388';
   const it = SET_ITEMS[menu.sel];
-  ctx.fillText(it === 'DIFFICULTY' ? DIFF().note : it === 'FLASHES' ? 'tones down the white flashes on big hits' : it === 'STORY SCENES' ? 'off: no cut-scenes, straight to the fighting' : it === 'SKILL TREE' ? 'after a level up: open the tree once the room is clear, or only when you ask' : isTouch() ? 'tap a row - left half lowers, right half raises' :
+  ctx.fillText(it === 'DIFFICULTY' ? DIFF().note : it === 'FLASHES' ? 'tones down the white flashes on big hits' : it === 'STORY SCENES' ? 'off: no cut-scenes, straight to the fighting' : it === 'PAD POSITION' ? 'phone: where the stick and buttons sit' : it === 'PAD SIZE' ? 'phone: how big the stick and buttons are' : it === 'SKILL TREE' ? 'after a level up: open the tree once the room is clear, or only when you ask' : isTouch() ? 'tap a row - left half lowers, right half raises' :
                GP.active ? 'up/down choose   left/right change   A select   B back' : 'arrows choose   left/right change   enter select   esc back', LW / 2, 246);
   ctx.textAlign = 'left';
 }
@@ -8788,7 +8792,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611251719', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611251737', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -8905,7 +8909,8 @@ function layoutTouch() {
   if (!isTouch()) return;
   const r = cv.getBoundingClientRect(), W = innerWidth, H = innerHeight;
   const lb = r.left, rb = W - r.right;
-  let P = TL.side ? clamp(Math.round(H * 0.33), 96, 156) : (TL.P || 110);   // thumb-sized; may reach a little over the picture
+  const sz = { s: 0.82, m: 1, l: 1.2 }[SET.padSize || 'm'], low = SET.padPos === 'low';
+  let P = Math.round((TL.side ? clamp(Math.round(H * 0.33), 96, 156) : (TL.P || 110)) * sz);   // thumb-sized; may reach a little over the picture
   TL.k = P / 124;
   const set = (id, st) => { const el = document.getElementById(id); if (el) Object.assign(el.style, st); };
   const px = v => Math.round(v) + 'px';
@@ -8914,17 +8919,20 @@ function layoutTouch() {
   const B = Math.round(P * 0.47), Wh = Math.round(P * 0.36);
   const op = TL.side ? '' : '0.6';
   if (TL.side) {
-    const lc = Math.max(lb / 2, P / 2 + 16), rc = W - Math.max(rb / 2, P / 2 + 16), up = Math.max(22, Math.round(H * 0.09));
+    const lc = Math.max(lb / 2, P / 2 + 16), rc = W - Math.max(rb / 2, P / 2 + 16);
+    // MIDDLE: thumbs rest at mid height (a bit below centre), LOW: down by the corners
+    const up = low ? Math.max(22, Math.round(H * 0.09)) : Math.round(Math.min(H * 0.42 - P / 2, H - P - (P * 0.47 + 10) - (P * 0.36 + 8) - 56));
     set('stick', { width: px(P), height: px(P), left: px(lc - P / 2), right: '', bottom: px(up), opacity: op });
     set('apad', { width: px(P), height: px(P), right: px(W - rc - P / 2), left: '', bottom: px(up), opacity: op });
     set('bBlock', { width: px(B), height: px(B), right: px(W - rc - B / 2), bottom: px(up + P + 10), opacity: op });
     set('bWhistle', { width: px(Wh), height: px(Wh), right: px(W - rc - Wh / 2), bottom: px(up + P + 10 + B + 8), opacity: op });
     set('bPause', { right: px(W - rc - 18), top: px(10) });
   } else {
-    set('stick', { width: px(P), height: px(P), left: px(8), right: '', bottom: px(8), opacity: op });
-    set('apad', { width: px(P), height: px(P), right: px(8), left: '', bottom: px(8), opacity: op });
-    set('bBlock', { width: px(B), height: px(B), right: px(8 + P + 10), bottom: px(8), opacity: op });
-    set('bWhistle', { width: px(Wh), height: px(Wh), right: px(8 + P + 14), bottom: px(8 + B + 10), opacity: op });
+    const up = low ? 8 : Math.round(Math.max(8, H * 0.42 - P / 2));
+    set('stick', { width: px(P), height: px(P), left: px(8), right: '', bottom: px(up), opacity: op });
+    set('apad', { width: px(P), height: px(P), right: px(8), left: '', bottom: px(up), opacity: op });
+    set('bBlock', { width: px(B), height: px(B), right: px(8 + P + 10), bottom: px(up), opacity: op });
+    set('bWhistle', { width: px(Wh), height: px(Wh), right: px(8 + P + 14), bottom: px(up + B + 10), opacity: op });
     set('bPause', { right: px(8), top: px(8) });
   }
 }
@@ -9044,6 +9052,7 @@ function boot() {
     killBoss: () => { const e = enemies.find(e => e.t.boss && !e.dead); if (e) { e.hp = 0; killEnemy(e); } },
     line: () => scene && scene.steps[scene.i] && scene.steps[scene.i].say ? scene.steps[scene.i].s : null,
     evNow: () => { evAt = classTime + 1; return evKey(); },
+    crowd: () => enemies.filter(e => e.crowd).map(e => e.type + '@' + Math.round(e.x) + ',' + Math.round(e.y) + ':' + e.st + (e.dead ? 'X' : '') + (e.exited ? 'E' : '')),
     prog: v => { forceProg = !!v; },
     skills: () => ({ level, xp, need: xpNeed(level), learned: [...learned], passives, pending: pendingPicks, state, ng: ngPlus, calm: calmT, auto: autoTree, alive: enemies.filter(e => !e.dead).map(e => e.type + ':' + e.st + (e.crowd ? 'C' : '') + (e.leaving ? 'L' : '')), sel: lvlCard && curTree()[lvlCard.sel][0] }),
     openTree: () => openTree(),
