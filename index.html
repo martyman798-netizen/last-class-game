@@ -58,6 +58,10 @@
   #rotate .ph{width:46px;height:80px;border:4px solid #ffd23f;border-radius:9px;position:relative;animation:turn 1.8s ease-in-out infinite}
   #rotate .ph:after{content:'';position:absolute;left:50%;bottom:5px;width:10px;height:3px;margin-left:-5px;background:#ffd23f;border-radius:2px}
   @keyframes turn{0%,20%{transform:rotate(0)}55%,100%{transform:rotate(-90deg)}}
+  /* nothing to fight: no sticks (menus, cards, scenes, the title) */
+  body.touch.noctl #stick,body.touch.noctl #apad,body.touch.noctl #bBlock,body.touch.noctl #bWhistle{display:none}
+  body.touch.nopause #bPause{display:none}
+  .lab{font-size:8px}
   @media (orientation:portrait){ body.touch #rotate{display:flex} body.touch #pad{display:none} }
 </style>
 </head>
@@ -359,8 +363,11 @@ function pollPad() {
   if (!gp) { GP.dx = GP.dy = 0; return; }
   for (const i in GP_MAP) {
     const b = gp.buttons[i], down = !!b && (b.pressed || b.value > 0.5);
-    if (down && !GP.prev[i]) { GP.active = true; keyDown(GP_MAP[i], false); }
-    if (!down && GP.prev[i]) keyUp(GP_MAP[i]);
+    if (down && !GP.prev[i]) {                     // SELECT in a fight opens the skill tree; elsewhere it's back
+      GP.active = true; GP.key = GP.key || {};
+      GP.key[i] = i == 8 && state === 'play' && !paused && !menu ? 't' : GP_MAP[i]; keyDown(GP.key[i], false);
+    }
+    if (!down && GP.prev[i]) keyUp((GP.key && GP.key[i]) || GP_MAP[i]);
     GP.prev[i] = down;
   }
   let x = gp.axes[0] || 0, y = gp.axes[1] || 0;
@@ -384,7 +391,7 @@ const T = { dx: 0, dy: 0, light: false, heavy: false, dodge: false, whistle: fal
 
 function setupTouch() {
   const stick = document.getElementById('stick'), knob = document.getElementById('knob');
-  let id = null, cx = 0, cy = 0; const R = 46;
+  let id = null, cx = 0, cy = 0; const R0 = 46;
   const start = e => {
     e.preventDefault(); A.init(); A.resume();
     const t = e.changedTouches[0]; id = t.identifier;
@@ -399,7 +406,7 @@ function setupTouch() {
   stick.addEventListener('touchend', end); stick.addEventListener('touchcancel', end);
   function mv(t) {
     let dx = t.clientX - cx, dy = t.clientY - cy;
-    const d = Math.hypot(dx, dy) || 1, cl = Math.min(d, R);
+    const R = R0 * TL.k, d = Math.hypot(dx, dy) || 1, cl = Math.min(d, R);
     dx /= d; dy /= d;
     knob.style.transform = `translate(calc(-50% + ${dx * cl}px), calc(-50% + ${dy * cl}px))`;
     const mag = Math.min(1, d / R);
@@ -437,9 +444,8 @@ function setupActionPad() {
   const pad = document.getElementById('apad'), knob = document.getElementById('aknob');
   if (!pad) return;
   let id = null, cx = 0, cy = 0, t0 = 0, armed = true, fired = false, holdTimer = null;
-  const R = 50;
   const show = (dx, dy) => {
-    const d = Math.hypot(dx, dy) || 1, cl = Math.min(d, R);
+    const R = 50 * TL.k, d = Math.hypot(dx, dy) || 1, cl = Math.min(d, R);
     knob.style.transform = `translate(calc(-50% + ${dx / d * cl}px), calc(-50% + ${dy / d * cl}px))`;
   };
   const flash = cls => { pad.classList.add(cls); setTimeout(() => pad.classList.remove(cls), 120); };
@@ -513,6 +519,7 @@ cv.addEventListener('pointerdown', e => {
   else if (state === 'loot') lootTap(x, y);
   else if (state === 'intro') introTap(x, y);
   else if (state === 'levelup') levelUpTap(x, y);
+  else if (state === 'play' && pendingPicks > 0 && x < LVL_BADGE.x + LVL_BADGE.w + 12 && y > LVL_BADGE.y - 8 && y < LVL_BADGE.y + LVL_BADGE.h + 8) treeReq = true;
 });
 function clearEdges() { T.lightEdge = T.heavyEdge = T.dodgeEdge = T.whistleEdge = T.jumpEdge = T.blockEdge = false; T.chargeRelease = false; }
 
@@ -2577,6 +2584,40 @@ function equip(id) {
   logEv('equip:' + id);
 }
 /* recolour his frames to match what he's wearing: hands, shoes, shirt */
+/* GEAR you can see. The hands, feet and body slots recolour him; the gear slot hangs something on
+   him: drawn into every frame, a pixel or two at a time, from where his head and chest are.
+   g: geometry of the frame (T top of head, cx head middle, hx0/hx1 head edges, bx0/bx1 chest edges, side view or not) */
+const hexRGB = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const ACC = {
+  headph: (p, g) => {                                   // band over the top, a cup on the ear
+    for (let x = g.hx0 + 1; x <= g.hx1 - 1; x++) p(x, g.T - 1, '#ff4fa3');
+    const cups = g.side ? [g.cx - 1] : [g.hx0 - 1, g.hx1];
+    cups.forEach(x => { for (let y = g.T + 1; y <= g.T + 3; y++) { p(x, y, '#c2185b'); p(x + 1, y, y === g.T + 1 ? '#ff80c0' : '#ff4fa3'); } });
+  },
+  goldwh: (p, g) => { p(g.cx, g.T + 7, '#c79a00'); p(g.cx + 1, g.T + 8, '#c79a00'); p(g.cx + 1, g.T + 9, '#ffd23f'); p(g.cx + 2, g.T + 9, '#fff59d'); },
+  watch: (p, g) => { p(g.cx, g.T + 7, '#1e88e5'); p(g.cx + 1, g.T + 8, '#4fc3f7'); p(g.cx + 2, g.T + 8, '#4fc3f7'); p(g.cx + 1, g.T + 9, '#e1f5fe'); p(g.cx + 2, g.T + 9, '#4fc3f7'); },
+  towel: (p, g) => {                                    // round the neck, the end hanging down his back
+    for (let x = g.bx0 - 1; x <= g.bx1; x++) { p(x, g.T + 6, '#ff6b35'); if (x < g.bx1 - 1) p(x, g.T + 7, '#e64a19'); }
+    if (g.side) for (let y = g.T + 8; y <= g.T + 10; y++) p(g.bx0 - 1, y, y % 2 ? '#ff6b35' : '#ffab91');
+  },
+  shaker: (p, g) => { const x = g.bx0 - 2; for (let y = g.T + 9; y <= g.T + 12; y++) { p(x, y, '#f8bbd0'); p(x + 1, y, '#f48fb1'); } p(x, g.T + 8, '#ec407a'); p(x + 1, g.T + 8, '#ec407a'); },
+  energy: (p, g) => { const x = g.bx0 - 2; p(x, g.T + 9, '#cfd8dc'); p(x + 1, g.T + 9, '#cfd8dc'); for (let y = g.T + 10; y <= g.T + 12; y++) { p(x, y, '#76ff03'); p(x + 1, y, '#33691e'); } },
+  creatine: (p, g) => { const x = g.bx0 - 3; for (let y = g.T + 7; y <= g.T + 10; y++) for (let k = 0; k < 3; k++) p(x + k, y, y === g.T + 7 ? '#b0bec5' : k === 1 && y === g.T + 9 ? '#e53935' : '#fafafa'); },
+  strap: (p, g) => { for (let i = 0; i <= 4; i++) p(g.bx0 + Math.round(i * (g.bx1 - g.bx0) / 4), g.T + 7 + i, i % 2 ? '#ab47bc' : '#ce93d8'); },
+  vip: (p, g) => { p(g.cx, g.T + 7, '#ff4fa3'); p(g.cx + 1, g.T + 8, '#ff4fa3'); p(g.cx + 1, g.T + 9, '#fff'); p(g.cx + 2, g.T + 9, '#fff'); p(g.cx + 1, g.T + 10, '#ff4fa3'); p(g.cx + 2, g.T + 10, '#ff4fa3'); },
+  loyal: (p, g) => { p(g.bx1, g.T + 10, '#ffd23f'); p(g.bx1 + 1, g.T + 10, '#ffd23f'); p(g.bx1, g.T + 11, '#c79a00'); p(g.bx1 + 1, g.T + 11, '#ffd23f'); }
+};
+function frameGeom(px, w, h, name) {
+  const op = (x, y) => x >= 0 && y >= 0 && x < w && y < h && px[(y * w + x) * 4 + 3] > 0;
+  let x0 = w, x1 = -1, y0 = h, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (op(x, y)) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0 || (x1 - x0) > (y1 - y0) || y1 - y0 < 14) return null;        // lying down or curled up: nothing to hang things on
+  const row = y => { let a = -1, b = -1; for (let x = 0; x < w; x++) if (op(x, y)) { if (a < 0) a = x; b = x; } return [a, b]; };
+  const T = y0, [hx0, hx1] = row(T + 2); let [bx0, bx1] = row(T + 9);
+  if (bx0 < 0) { bx0 = hx0; bx1 = hx1; }
+  bx1 = Math.min(bx1, bx0 + 4);                         // an arm out front isn't his chest
+  return { T, hx0, hx1, cx: Math.round((hx0 + hx1) / 2), bx0, bx1, side: !/front|back/.test(name) };
+}
 function buildSkin() {
   const base = FS[C().sheet];
   if (!base) return;
@@ -2589,7 +2630,9 @@ function buildSkin() {
     if (it.pal.shoe) { add('S', it.pal.shoe); add('s', it.pal.shoe, true); }
     if (it.pal.shirt) { add('D', it.pal.shirt); add('d', it.pal.shirt, true); }
   }
-  if (!swap.length) { delete FS.pskin; return; }
+  const acc = gear.GEAR && ACC[gear.GEAR];
+  delete PORTRAIT.pskin;
+  if (!swap.length && !acc) { delete FS.pskin; return; }
   const f = {};
   for (const name in base.f) {
     const src = base.f[name].img, c = document.createElement('canvas');
@@ -2601,6 +2644,12 @@ function buildSkin() {
       for (const [from, to] of swap)
         if (px[i] === from[0] && px[i + 1] === from[1] && px[i + 2] === from[2]) { px[i] = to[0]; px[i + 1] = to[1]; px[i + 2] = to[2]; break; }
     }
+    const geo = acc && frameGeom(px, c.width, c.height, name);
+    if (geo) acc((x, y, col) => {
+      if (x < 0 || y < 0 || x >= c.width || y >= c.height) return;
+      const j = (y * c.width + x) * 4, rgb = hexRGB(col);
+      px[j] = rgb[0]; px[j + 1] = rgb[1]; px[j + 2] = rgb[2]; px[j + 3] = 255;
+    }, geo);
     g.putImageData(d, 0, 0);
     f[name] = { img: c };
   }
@@ -5508,7 +5557,10 @@ function update() {
 
   if (!(witchT > 0) || classTime % 3 === 0) stepShots();
   stepPickups(); stepParts(); stepProps(); stepLoot(); stepWreck(); stepRaid(); stepAbsurd();
-  if (autoTree && pendingPicks > 0 && state === 'play' && ['idle', 'walk', 'run'].includes(player.st) && !player.carry && !player.dead) { autoTree = false; openTree(); }
+  // a level up never stops a fight: the tree waits until nobody is left standing, then opens
+  calmT = enemies.some(e => !e.dead && !e.crowd && !e.leaving) ? 0 : calmT + 1;
+  if (autoTree && pendingPicks > 0 && SET.tree !== 'manual' && calmT > 24 && state === 'play' && !scene
+      && ['idle', 'walk', 'run'].includes(player.st) && !player.carry && !player.dead) { autoTree = false; openTree(); }
   if (treeReq) { treeReq = false; if (state === 'play' && progression()) openTree(); }
   if (state === 'loot') return;
   stepWorldEvent();
@@ -5518,8 +5570,13 @@ function update() {
 
   const cap = bossRound(round) ? 3 : 4;
   const alive = enemies.reduce((n, e) => n + (e.dead || e.crowd || e.leaving ? 0 : 1), 0);   // bodies lie around; crowds are passing through
+  // a level up waiting: once the room is empty, the next lot holds back so the tree can open in the quiet
+  const hold = autoTree && pendingPicks > 0 && SET.tree !== 'manual' && progression() && calmT < 240;
   if (spawnQ.length) {
-    if (--spawnDelay <= 0 && alive < cap) { spawnEnemy(spawnQ.shift()); spawnDelay = 66; }
+    if (hold && !alive) spawnDelay = Math.max(spawnDelay, 20);
+    else if (--spawnDelay <= 0 && alive < cap) { spawnEnemy(spawnQ.shift()); spawnDelay = 66; }
+  } else if (hold) {
+    /* wait for the tree */
   } else if (player.hp > 0 && !worldEv && !evPending() && !flowOff) {
     // one long fight: the next wave walks in while the last one is still finishing - no score card in between
     const end = stageEnd(round), boss = round + 1 < ROUNDS.length && bossRound(round + 1);
@@ -5767,7 +5824,7 @@ function titleTap(x, y) {
 
 /* ---------- settings and controls screens (from the title or the pause menu) ---------- */
 let menu = null;
-const SET_ITEMS = ['MUSIC', 'SOUND FX', 'BLOOD', 'SCREEN SHAKE', 'FLASHES', 'DIFFICULTY', 'ENEMY CARDS', 'FULLSCREEN', 'CONTROLS', 'BACK'];
+const SET_ITEMS = ['MUSIC', 'SOUND FX', 'BLOOD', 'SCREEN SHAKE', 'FLASHES', 'DIFFICULTY', 'ENEMY CARDS', 'SKILL TREE', 'FULLSCREEN', 'CONTROLS', 'BACK'];
 function openMenu(kind, from) { menu = { kind, from, sel: 0 }; A.tele(); ['space', 'enter', 'j', 'k', 'l'].forEach(k => { buf[k] = 0; }); }
 function closeMenu() { if (menu && menu.kind === 'controls' && menu.back) { menu = menu.back; return; } menu = null; saveSet(); A.tele(); }
 function setAdjust(it, d) {
@@ -5777,6 +5834,7 @@ function setAdjust(it, d) {
   else if (it === 'SCREEN SHAKE') SET.shake = !SET.shake;
   else if (it === 'FLASHES') SET.flash = !SET.flash;
   else if (it === 'ENEMY CARDS') SET.cards = SET.cards === false;
+  else if (it === 'SKILL TREE') SET.tree = SET.tree === 'manual' ? 'calm' : 'manual';
   else if (it === 'DIFFICULTY') {
     if (state === 'play' && menu.from === 'pause') { say(player.x, player.y - 60, 'CHANGE IT BETWEEN RUNS', '#ff5252'); return; }
     SET.diff = d ? clamp(SET.diff + d, 0, 2) : (SET.diff + 1) % 3;
@@ -5801,7 +5859,7 @@ function menuKey(k) {
     else setAdjust(it, it === 'MUSIC' || it === 'SOUND FX' ? (SET[it === 'MUSIC' ? 'music' : 'sfx'] >= 10 ? -10 : 1) : 0);
   }
 }
-const setRow = i => ({ x: LW / 2 - 110, y: 50 + i * 19, w: 220, h: 15 });
+const setRow = i => ({ x: LW / 2 - 110, y: 46 + i * 17, w: 220, h: 14 });
 function menuTap(x, y) {
   if (menu.kind === 'controls') { closeMenu(); return; }
   for (let i = 0; i < SET_ITEMS.length; i++) {
@@ -5836,6 +5894,7 @@ function drawMenu() {
     else if (it === 'SCREEN SHAKE') val = on(SET.shake);
     else if (it === 'FLASHES') val = SET.flash ? 'FULL' : 'REDUCED';
     else if (it === 'ENEMY CARDS') val = on(SET.cards !== false);
+    else if (it === 'SKILL TREE') val = SET.tree === 'manual' ? 'WHEN I ASK' : 'WHEN CLEAR';
     else if (it === 'DIFFICULTY') val = '< ' + DIFF().n + ' >';
     else if (it === 'FULLSCREEN') val = on(!!document.fullscreenElement);
     else if (it === 'CONTROLS') val = '>';
@@ -5843,8 +5902,8 @@ function drawMenu() {
   });
   ctx.textAlign = 'center'; ctx.font = '7px monospace'; ctx.fillStyle = '#6b6388';
   const it = SET_ITEMS[menu.sel];
-  ctx.fillText(it === 'DIFFICULTY' ? DIFF().note : it === 'FLASHES' ? 'tones down the white flashes on big hits' : isTouch() ? 'tap a row - left half lowers, right half raises' :
-               GP.active ? 'up/down choose   left/right change   A select   B back' : 'arrows choose   left/right change   enter select   esc back', LW / 2, 230);
+  ctx.fillText(it === 'DIFFICULTY' ? DIFF().note : it === 'FLASHES' ? 'tones down the white flashes on big hits' : it === 'SKILL TREE' ? 'after a level up: open the tree once the room is clear, or only when you ask' : isTouch() ? 'tap a row - left half lowers, right half raises' :
+               GP.active ? 'up/down choose   left/right change   A select   B back' : 'arrows choose   left/right change   enter select   esc back', LW / 2, 246);
   ctx.textAlign = 'left';
 }
 function drawControls() {
@@ -6640,7 +6699,8 @@ const nodeKind = id => SKILLS[id] ? 'NEW MOVE' : PASSIVES[id] ? 'UPGRADE' : 'ABS
 const nodeHas = id => !progression() || learned.has(id) || !!passives[id];
 const nodeReady = n => !nodeHas(n[0]) && n[4].every(nodeHas);
 function nodeRect(n) { return { x: 10 + n[1] * 157 + n[2] * 76, y: 50 + n[3] * 32, w: 70, h: 22 }; }
-let treeReq = false, autoTree = false;
+let treeReq = false, autoTree = false, calmT = 0;
+const LVL_BADGE = { x: 6, y: 55, w: 92, h: 12 };
 function openLevelUp() { openTree(); }
 function openTree() {
   const T0 = curTree();
@@ -6665,6 +6725,7 @@ function treeLearn(n) {
   if (!nodeReady(n) || pendingPicks <= 0) { A.tone(200, 150, 0.1, 'square', 0.08); return; }
   pendingPicks--; learnNode(n[0]);
   A.rank(); flashScreen = 4; lvlCard.pulse = 20;
+  if (pendingPicks > 0) { const T0 = curTree(), nx = T0.findIndex(q => nodeReady(q)); if (nx >= 0) lvlCard.sel = nx; }   // points left: hop to the next thing you can learn
   saveCheckpoint();
 }
 function closeTree() {
@@ -6791,7 +6852,15 @@ function drawXPBar() {
   ctx.fillStyle = '#2a2340'; ctx.fillRect(x, y, w, 3);
   ctx.fillStyle = ngPlus ? '#ff4fa3' : '#b388ff'; ctx.fillRect(x, y, Math.round(w * Math.min(1, xp / xpNeed(level))), 3);
   ctx.font = 'bold 5px monospace'; ctx.textAlign = 'left'; ctx.fillStyle = ngPlus ? '#ff4fa3' : '#b388ff';
-  ctx.fillText((ngPlus ? 'NG+ ' : '') + 'LV ' + level + (pendingPicks ? '  ' + pendingPicks + ' POINT' + (pendingPicks > 1 ? 'S' : '') + ' [T]' : ''), 110, 52);
+  ctx.fillText((ngPlus ? 'NG+ ' : '') + 'LV ' + level + (pendingPicks > 1 ? '  ' + pendingPicks + ' POINTS' : ''), 110, 52);
+  if (pendingPicks && state === 'play') {                   // a point to spend: a badge, not a pause
+    const b = LVL_BADGE, on = (classTime >> 4) % 2;
+    ctx.fillStyle = '#000'; ctx.fillRect(b.x - 1, b.y - 1, b.w + 2, b.h + 2);
+    ctx.fillStyle = on ? '#b388ff' : '#7e57c2'; ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = on ? '#1b1630' : '#fff';
+    ctx.fillText('LEVEL UP!  ' + (isTouch() && !GP.active ? 'TAP' : GP.active ? 'SELECT' : '[T]'), b.x + b.w / 2, b.y + 9);
+    ctx.textAlign = 'left';
+  }
 }
 /* ---------- the absurd stuff, in action ---------- */
 let booms = [], gfCount = 0;
@@ -7344,6 +7413,35 @@ function drawEmote(icon, x, y, t) {
   ctx.restore(); ctx.textAlign = 'left';
 }
 /* on top of everything: the letterbox, the dialogue, the big SNAP text */
+/* the face of whoever is talking: the head of their standing frame, cut out once and kept */
+const PORTRAIT = {};
+function portraitOf(who) {
+  if (who in PORTRAIT) return PORTRAIT[who];
+  const set = FS[who], fr = set && (set.f.idle0 || set.f.idle);
+  if (!fr) return (PORTRAIT[who] = null);
+  const m = set.meta, c = document.createElement('canvas'); c.width = m.w; c.height = m.h;
+  const g = c.getContext('2d');
+  if (fr.layers) { for (const k of DRAW_ORDER) if (fr.layers[k]) g.drawImage(fr.layers[k].img, 0, 0); }
+  else g.drawImage(fr.img, 0, 0);
+  const px = g.getImageData(0, 0, m.w, m.h).data, op = (x, y) => px[(y * m.w + x) * 4 + 3] > 40;
+  let top = -1, bot = -1;
+  for (let y = 0; y < m.h && top < 0; y++) for (let x = 0; x < m.w; x++) if (op(x, y)) { top = y; break; }
+  for (let y = m.h - 1; y >= 0 && bot < 0; y--) for (let x = 0; x < m.w; x++) if (op(x, y)) { bot = y; break; }
+  if (top < 0) return (PORTRAIT[who] = null);
+  const side = Math.max(9, Math.min(18, Math.round((bot - top + 1) * 0.36)));
+  let sx = 0, n = 0;
+  for (let y = top; y < Math.min(m.h, top + Math.round(side * 0.7)); y++) for (let x = 0; x < m.w; x++) if (op(x, y)) { sx += x; n++; }
+  const cx = n ? Math.round(sx / n) : m.w >> 1, x0 = cx - (side >> 1), y0 = top - 1;
+  const o = document.createElement('canvas'); o.width = side; o.height = side;
+  o.getContext('2d').drawImage(c, x0, y0, side, side, 0, 0, side, side);
+  return (PORTRAIT[who] = o);
+}
+function speakerSprite(sc, w) {
+  if (w === 'sound' || !w) return null;
+  if (w === 'you' || w === 'think') return playerSheet();
+  const c = castOf(sc, w);
+  return (c && (c.spr || (TYPES[c.type] && TYPES[c.type].spr))) || (FS[w] ? w : null);
+}
 function drawScene() {
   const sc = scene, st = sc.steps[sc.i] || {};
   if (sc.lightning > 0 && sc.lightning % 4 < 2) { ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(0, 0, LW, LH); }
@@ -7360,7 +7458,19 @@ function drawScene() {
   }
   if (!st.say) return;
   const who = speakerName(sc, st.say), col = speakerCol(sc, st.say);
-  const bx = 40, by = 26, bw = LW - 80, bh = 52;
+  const pic = portraitOf(speakerSprite(sc, st.say) || '');
+  const pw = pic ? 48 : 0, bx = 40 + (pic ? pw + 4 : 0) - (pic ? 26 : 0), by = 26, bw = pic ? LW - 14 - bx : LW - 80, bh = 52;
+  if (pic) {                                                // a little framed face, so you can see who's talking
+    const px0 = bx - pw - 4, k = stateT < 6 ? stateT / 6 : 1, bob = (sc.t >> 3) % 2 && sc.t / 3 < st.s.length ? 1 : 0;
+    ctx.fillStyle = 'rgba(12,8,22,.92)'; ctx.fillRect(px0, by, pw, bh);
+    ctx.fillStyle = col; ctx.fillRect(px0, by, pw, 2); ctx.fillRect(px0, by + bh - 2, pw, 2); ctx.fillRect(px0, by, 2, bh); ctx.fillRect(px0 + pw - 2, by, 2, bh);
+    ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(px0 + 4, by + 4, pw - 8, bh - 8);
+    const sz = Math.floor((pw - 8) / pic.width) * pic.width || pw - 8;
+    ctx.save(); ctx.globalAlpha = k;
+    ctx.drawImage(pic, px0 + (pw - sz) / 2, by + (bh - sz) / 2 + 1 - bob, sz, sz);
+    if (st.say === 'think') { ctx.fillStyle = 'rgba(30,20,60,.35)'; ctx.fillRect(px0 + 4, by + 4, pw - 8, bh - 8); }
+    ctx.restore();
+  }
   ctx.fillStyle = 'rgba(12,8,22,.92)'; ctx.fillRect(bx, by, bw, bh);
   ctx.fillStyle = col; ctx.fillRect(bx, by, bw, 2); ctx.fillRect(bx, by + bh - 2, bw, 2);
   ctx.font = 'bold 8px monospace'; ctx.fillStyle = col; ctx.textAlign = 'left'; if (who) ctx.fillText(who, bx + 10, by + 13);
@@ -8418,19 +8528,73 @@ function drawEnd(title, sub, col) {
 }
 
 /* ============================== BOOT ============================== */
+/* touch layout. On a wide phone the 16:9 picture leaves bars at the sides: shrink the picture
+   a little if that lets the stick and the pad sit in those bars, off the fight. If the screen
+   is too square for that, the controls sit over the corners, smaller and see-through. */
+const TL = { k: 1, side: false };
+function pickScale(aw, ah) {
+  const full = Math.min(aw / LW, ah / LH);
+  if (!isTouch() || isPortrait()) return full;
+  const P = clamp(Math.round(ah * 0.27), 84, 124), need = P + 14;
+  const side = Math.min((aw - 2 * need) / LW, ah / LH);
+  TL.side = side >= full * 0.84;
+  TL.P = TL.side ? P : clamp(Math.round(ah * 0.24), 80, 108);
+  return TL.side ? side : full;
+}
+function layoutTouch() {
+  if (!isTouch()) return;
+  const r = cv.getBoundingClientRect(), W = innerWidth, H = innerHeight;
+  const lb = r.left, rb = W - r.right;
+  let P = TL.P || 110;
+  if (TL.side) P = Math.max(76, Math.min(P, Math.min(lb, rb) - 10));
+  TL.k = P / 124;
+  const set = (id, st) => { const el = document.getElementById(id); if (el) Object.assign(el.style, st); };
+  const px = v => Math.round(v) + 'px';
+  const kn = px(P * 0.4);
+  set('knob', { width: kn, height: kn }); set('aknob', { width: kn, height: kn });
+  const B = Math.round(P * 0.47), Wh = Math.round(P * 0.36);
+  const op = TL.side ? '' : '0.6';
+  if (TL.side) {
+    const lc = lb / 2, rc = W - rb / 2;               // middle of each side bar
+    set('stick', { width: px(P), height: px(P), left: px(lc - P / 2), right: '', bottom: px(14), opacity: op });
+    set('apad', { width: px(P), height: px(P), right: px(W - rc - P / 2), left: '', bottom: px(14), opacity: op });
+    set('bBlock', { width: px(B), height: px(B), right: px(W - rc - B / 2), bottom: px(14 + P + 12), opacity: op });
+    set('bWhistle', { width: px(Wh), height: px(Wh), right: px(W - rc - Wh / 2), bottom: px(14 + P + 12 + B + 10), opacity: op });
+    set('bPause', { right: px(W - rc - 18), top: px(10) });
+  } else {
+    set('stick', { width: px(P), height: px(P), left: px(8), right: '', bottom: px(8), opacity: op });
+    set('apad', { width: px(P), height: px(P), right: px(8), left: '', bottom: px(8), opacity: op });
+    set('bBlock', { width: px(B), height: px(B), right: px(8 + P + 10), bottom: px(8), opacity: op });
+    set('bWhistle', { width: px(Wh), height: px(Wh), right: px(8 + P + 14), bottom: px(8 + B + 10), opacity: op });
+    set('bPause', { right: px(8), top: px(8) });
+  }
+}
+/* the sticks only show when there is fighting to do; on menus, cards and scenes they'd just be in the way */
+let ctlShown = null;
+function syncControls() {
+  const fight = (state === 'play' || state === 'door') && !paused && !menu && !scene;
+  const pause = (state === 'play' || state === 'door') && !menu && !scene;
+  const key = (fight ? 1 : 0) + (pause ? 2 : 0);
+  if (key === ctlShown) return;
+  ctlShown = key;
+  document.body.classList.toggle('noctl', !fight);
+  document.body.classList.toggle('nopause', !pause);
+  if (!fight) { T.dx = T.dy = 0; T.block = false; T.whistle = false; T.charging = false; }
+}
 function fit() {
   const wrap = document.getElementById('wrap');
   const cs = getComputedStyle(wrap);
   const aw = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
   const ah = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-  let s = Math.min(aw / LW, ah / LH);
+  let s = pickScale(aw, ah);
   // pixel art scaled by a fraction gets uneven pixels, and anything that moves seems to wobble.
   // Use a whole-number scale whenever that gives up less than a fifth of the space.
   if (s >= 2 && (s - Math.floor(s)) / s < 0.2) s = Math.floor(s);
-  else if (s >= 1) s = Math.floor(s * 8) / 8;
+  else if (s >= 1) s = Math.floor(s * 16) / 16;
   s = Math.max(0.15, s);
   cv.style.width = Math.floor(LW * s) + 'px';
   cv.style.height = Math.floor(LH * s) + 'px';
+  layoutTouch();
 }
 
 function boot() {
@@ -8469,7 +8633,7 @@ function boot() {
     while (acc >= STEP) { pollPad(); if (!frozen) update(); acc -= STEP; }
     ctx.clearRect(0, 0, LW, LH);
     ctx.imageSmoothingEnabled = false;
-    render();
+    render(); syncControls();
     requestAnimationFrame(loop);
   })(performance.now());
 
@@ -8497,6 +8661,7 @@ function boot() {
     grant: (...ids) => ids.forEach(id => { gear[ITEMS[id].slot] = id; }),
     drop: (id, x, y) => { seenLoot.add(id); loot.push({ id, x, y, t: 31, vz: 0, z: 0 }); },
     equip: id => equip(id),
+    ppos: () => ({ x: player.x, y: player.y, face: player.face }),
     hurt: n => { player.hp -= n; },
     foeHP: n => enemies.forEach(e => { e.hp = e.maxhp = n; }),
     step: n => { for (let i = 0; i < (n || 1); i++) update(); ctx.clearRect(0, 0, LW, LH); render(); },
@@ -8514,7 +8679,7 @@ function boot() {
     line: () => scene && scene.steps[scene.i] && scene.steps[scene.i].say ? scene.steps[scene.i].s : null,
     evNow: () => { evAt = classTime + 1; return evKey(); },
     prog: v => { forceProg = !!v; },
-    skills: () => ({ level, xp, need: xpNeed(level), learned: [...learned], passives, pending: pendingPicks, state, ng: ngPlus, sel: lvlCard && curTree()[lvlCard.sel][0] }),
+    skills: () => ({ level, xp, need: xpNeed(level), learned: [...learned], passives, pending: pendingPicks, state, ng: ngPlus, calm: calmT, auto: autoTree, alive: enemies.filter(e => !e.dead).map(e => e.type + ':' + e.st + (e.crowd ? 'C' : '') + (e.leaving ? 'L' : '')), sel: lvlCard && curTree()[lvlCard.sel][0] }),
     openTree: () => openTree(),
     pip: () => { const e = enemies.find(e => e.t.boss && !e.dead); if (!e) return null; e.pipAt = -999; bossPip(e, 'TEST'); return { pips: e.pips || 0, broken: e.brokenT || 0, st: e.st }; },
     parryTest: big => { const e = enemies.find(e => !e.dead && !e.t.boss && !e.crowd); if (!e) return null; const p = player;
