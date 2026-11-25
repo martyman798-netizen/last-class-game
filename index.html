@@ -519,7 +519,8 @@ cv.addEventListener('pointerdown', e => {
   else if (state === 'loot') lootTap(x, y);
   else if (state === 'intro') introTap(x, y);
   else if (state === 'levelup') levelUpTap(x, y);
-  else if (state === 'play' && pendingPicks > 0 && x < LVL_BADGE.x + LVL_BADGE.w + 12 && y > LVL_BADGE.y - 8 && y < LVL_BADGE.y + LVL_BADGE.h + 8) treeReq = true;
+  else if (state === 'scene' && x >= SKIP_BTN.x - 6 && y <= SKIP_BTN.y + SKIP_BTN.h + 8) sceneSkipReq = true;
+  else if (state === 'play' && pendingPicks > 0 && x > LVL_BADGE.x - 10 && x < LVL_BADGE.x + LVL_BADGE.w + 10 && y > LVL_BADGE.y - 10 && y < LVL_BADGE.y + LVL_BADGE.h + 10) treeReq = true;
 });
 function clearEdges() { T.lightEdge = T.heavyEdge = T.dodgeEdge = T.whistleEdge = T.jumpEdge = T.blockEdge = false; T.chargeRelease = false; }
 
@@ -6100,7 +6101,7 @@ function titleTap(x, y) {
 
 /* ---------- settings and controls screens (from the title or the pause menu) ---------- */
 let menu = null;
-const SET_ITEMS = ['MUSIC', 'SOUND FX', 'BLOOD', 'SCREEN SHAKE', 'FLASHES', 'DIFFICULTY', 'ENEMY CARDS', 'SKILL TREE', 'FULLSCREEN', 'CONTROLS', 'BACK'];
+const SET_ITEMS = ['MUSIC', 'SOUND FX', 'BLOOD', 'SCREEN SHAKE', 'FLASHES', 'DIFFICULTY', 'STORY SCENES', 'ENEMY CARDS', 'SKILL TREE', 'FULLSCREEN', 'CONTROLS', 'BACK'];
 function openMenu(kind, from) { menu = { kind, from, sel: 0 }; A.tele(); ['space', 'enter', 'j', 'k', 'l'].forEach(k => { buf[k] = 0; }); }
 function closeMenu() { if (menu && menu.kind === 'controls' && menu.back) { menu = menu.back; return; } menu = null; saveSet(); A.tele(); }
 function setAdjust(it, d) {
@@ -6111,6 +6112,7 @@ function setAdjust(it, d) {
   else if (it === 'FLASHES') SET.flash = !SET.flash;
   else if (it === 'ENEMY CARDS') SET.cards = SET.cards === false;
   else if (it === 'SKILL TREE') SET.tree = SET.tree === 'manual' ? 'calm' : 'manual';
+  else if (it === 'STORY SCENES') SET.story = SET.story === false;
   else if (it === 'DIFFICULTY') {
     if (state === 'play' && menu.from === 'pause') { say(player.x, player.y - 60, 'CHANGE IT BETWEEN RUNS', '#ff5252'); return; }
     SET.diff = d ? clamp(SET.diff + d, 0, 2) : (SET.diff + 1) % 3;
@@ -6135,7 +6137,7 @@ function menuKey(k) {
     else setAdjust(it, it === 'MUSIC' || it === 'SOUND FX' ? (SET[it === 'MUSIC' ? 'music' : 'sfx'] >= 10 ? -10 : 1) : 0);
   }
 }
-const setRow = i => ({ x: LW / 2 - 110, y: 46 + i * 17, w: 220, h: 14 });
+const setRow = i => ({ x: LW / 2 - 110, y: 42 + i * 16, w: 220, h: 13 });
 function menuTap(x, y) {
   if (menu.kind === 'controls') { closeMenu(); return; }
   for (let i = 0; i < SET_ITEMS.length; i++) {
@@ -6171,6 +6173,7 @@ function drawMenu() {
     else if (it === 'FLASHES') val = SET.flash ? 'FULL' : 'REDUCED';
     else if (it === 'ENEMY CARDS') val = on(SET.cards !== false);
     else if (it === 'SKILL TREE') val = SET.tree === 'manual' ? 'WHEN I ASK' : 'WHEN CLEAR';
+    else if (it === 'STORY SCENES') val = on(SET.story !== false);
     else if (it === 'DIFFICULTY') val = '< ' + DIFF().n + ' >';
     else if (it === 'FULLSCREEN') val = on(!!document.fullscreenElement);
     else if (it === 'CONTROLS') val = '>';
@@ -6178,7 +6181,7 @@ function drawMenu() {
   });
   ctx.textAlign = 'center'; ctx.font = '7px monospace'; ctx.fillStyle = '#6b6388';
   const it = SET_ITEMS[menu.sel];
-  ctx.fillText(it === 'DIFFICULTY' ? DIFF().note : it === 'FLASHES' ? 'tones down the white flashes on big hits' : it === 'SKILL TREE' ? 'after a level up: open the tree once the room is clear, or only when you ask' : isTouch() ? 'tap a row - left half lowers, right half raises' :
+  ctx.fillText(it === 'DIFFICULTY' ? DIFF().note : it === 'FLASHES' ? 'tones down the white flashes on big hits' : it === 'STORY SCENES' ? 'off: no cut-scenes, straight to the fighting' : it === 'SKILL TREE' ? 'after a level up: open the tree once the room is clear, or only when you ask' : isTouch() ? 'tap a row - left half lowers, right half raises' :
                GP.active ? 'up/down choose   left/right change   A select   B back' : 'arrows choose   left/right change   enter select   esc back', LW / 2, 246);
   ctx.textAlign = 'left';
 }
@@ -6951,7 +6954,10 @@ function gainXP(n) {
   xp += n;
   while (xp >= xpNeed(level)) {
     xp -= xpNeed(level); level++; pendingPicks++; autoTree = true;
-    say(player.x, player.y - 84, 'LEVEL UP!', '#b388ff', true); A.rank(); ring(player.x, player.y - 24, '#b388ff', 6, 46);
+    A.rank(); ring(player.x, player.y - 24, '#b388ff', 6, 46);
+    lvlBanner = { t: 0, lv: level };
+    ring(player.x, player.y - 24, '#ffd23f', 4, 70); burst(player.x, player.y - 30, 24, '#b388ff', 3.2); burst(player.x, player.y - 30, 12, '#ffd23f', 2.4);
+    [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => A.tone(f, f * 1.01, 0.16, 'square', 0.07), i * 90));
   }
 }
 /* ---------- the skill tree: every level is a point to spend, and you can see what's coming ---------- */
@@ -6976,8 +6982,8 @@ const nodeKind = id => SKILLS[id] ? 'NEW MOVE' : PASSIVES[id] ? 'UPGRADE' : 'ABS
 const nodeHas = id => !progression() || learned.has(id) || !!passives[id];
 const nodeReady = n => !nodeHas(n[0]) && n[4].every(nodeHas);
 function nodeRect(n) { return { x: 10 + n[1] * 157 + n[2] * 76, y: 50 + n[3] * 32, w: 70, h: 22 }; }
-let treeReq = false, autoTree = false, calmT = 0;
-const LVL_BADGE = { x: 6, y: 55, w: 92, h: 12 };
+let treeReq = false, autoTree = false, calmT = 0, lvlBanner = null;
+const LVL_BADGE = { x: 212, y: 26, w: 116, h: 16 };
 function openLevelUp() { openTree(); }
 function openTree() {
   const T0 = curTree();
@@ -7130,13 +7136,35 @@ function drawXPBar() {
   ctx.fillStyle = ngPlus ? '#ff4fa3' : '#b388ff'; ctx.fillRect(x, y, Math.round(w * Math.min(1, xp / xpNeed(level))), 3);
   ctx.font = 'bold 5px monospace'; ctx.textAlign = 'left'; ctx.fillStyle = ngPlus ? '#ff4fa3' : '#b388ff';
   ctx.fillText((ngPlus ? 'NG+ ' : '') + 'LV ' + level + (pendingPicks > 1 ? '  ' + pendingPicks + ' POINTS' : ''), 110, 52);
-  if (pendingPicks && state === 'play') {                   // a point to spend: a badge, not a pause
-    const b = LVL_BADGE, on = (classTime >> 4) % 2;
+  if (pendingPicks && state === 'play') {                   // a point to spend: a badge at the top, not a pause
+    const b = LVL_BADGE, on = (classTime >> 4) % 2, glow = 0.5 + 0.5 * Math.sin(classTime / 6);
+    ctx.fillStyle = `rgba(179,136,255,${0.25 + 0.3 * glow})`; ctx.fillRect(b.x - 4, b.y - 4, b.w + 8, b.h + 8);
     ctx.fillStyle = '#000'; ctx.fillRect(b.x - 1, b.y - 1, b.w + 2, b.h + 2);
     ctx.fillStyle = on ? '#b388ff' : '#7e57c2'; ctx.fillRect(b.x, b.y, b.w, b.h);
-    ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = on ? '#1b1630' : '#fff';
-    ctx.fillText('LEVEL UP!  ' + (isTouch() && !GP.active ? 'TAP' : GP.active ? 'SELECT' : '[T]'), b.x + b.w / 2, b.y + 9);
+    ctx.fillStyle = '#ffd23f'; ctx.fillRect(b.x, b.y, b.w, 2);
+    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = on ? '#1b1630' : '#fff';
+    ctx.fillText('★ SKILL POINT' + (pendingPicks > 1 ? ' x' + pendingPicks : '') + '  ' + (isTouch() && !GP.active ? 'TAP' : GP.active ? 'SELECT' : '[T]'), b.x + b.w / 2, b.y + 12);
     ctx.textAlign = 'left';
+  }
+  if (lvlBanner && state === 'play' && !(banner && banner.t > 0) && !ticker) {   // the big moment, once the round title has gone
+    const t = ++lvlBanner.t, life = 150, k = Math.min(1, t / 8), out = t > life - 20 ? (life - t) / 20 : 1;
+    if (t >= life) lvlBanner = null;
+    else {
+      const y = 78, h = 34, w = LW * k;
+      ctx.save(); ctx.globalAlpha = out;
+      ctx.fillStyle = 'rgba(20,10,40,.85)'; ctx.fillRect(LW / 2 - w / 2, y, w, h);
+      ctx.fillStyle = '#b388ff'; ctx.fillRect(LW / 2 - w / 2, y, w, 2); ctx.fillRect(LW / 2 - w / 2, y + h - 2, w, 2);
+      if (k >= 1) {
+        const bob = Math.max(0, 8 - t) * 2;
+        ctx.textAlign = 'center'; ctx.font = 'bold 18px monospace';
+        ctx.fillStyle = '#000'; ctx.fillText('LEVEL UP!', LW / 2 + 2, y + 20 - bob + 2);
+        ctx.fillStyle = (t >> 3) % 2 ? '#ffd23f' : '#fff'; ctx.fillText('LEVEL UP!', LW / 2, y + 20 - bob);
+        ctx.font = 'bold 8px monospace'; ctx.fillStyle = '#d1c4e9';
+        ctx.fillText('LV ' + lvlBanner.lv + '  -  new skill ready: ' + (isTouch() && !GP.active ? 'tap ★ at the top' : GP.active ? 'press SELECT' : 'press T'), LW / 2, y + 30);
+        ctx.textAlign = 'left';
+      }
+      ctx.restore();
+    }
   }
 }
 /* ---------- the absurd stuff, in action ---------- */
@@ -7311,7 +7339,8 @@ let wifeOn = false, wifeShock = 0, scene = null, credits = null;
    the camera pushes in - and the instructor stays polite for far too long, until he snaps in the
    most over-the-top way possible. Space = next line, K = skip. */
 let forceStory = false, exiting = [];
-const storyOn = () => forceStory || !cardsOff;
+const storyOn = () => forceStory || (!cardsOff && SET.story !== false);
+const SKIP_BTN = { x: LW - 64, y: 4, w: 58, h: 15 };
 const SAY_COL = { you: '#ffd23f', think: '#c5b358', sound: '#9e9e9e', wife: '#4db6ac', yoga: '#ce93d8',
   shades: '#ff80ab', dino: '#8bc34a', blonde: '#ffd54f', bulker: '#ff9800', heckler: '#ef5350', cashier: '#ff9800', cook: '#e57373', jamal: '#26a69a', clark: '#90a4ae' };
 const SFX = {
@@ -7592,6 +7621,7 @@ function stepMovers(list, sc) {
     return true;
   });
 }
+let sceneSkipReq = false;
 function updateScene() {
   const sc = scene, st = sc.steps[sc.i];
   if (!st) { endScene(); return; }
@@ -7613,7 +7643,7 @@ function updateScene() {
   });
   if (player.hurtT === 1 && player.pose === 'hurt') player.pose = null;
   stepParts();
-  const skip = tapped('k') && stateT > 8;
+  const skip = (tapped('k') || sceneSkipReq) && stateT > 8; sceneSkipReq = false;
   const press = startPressed();
   clearEdges(); eat(['space', 'enter', 'j', 'k']);
   if (skip) { sc.i = sc.steps.length; endScene(); return; }
@@ -7761,7 +7791,12 @@ function drawScene() {
   lines.forEach((l, i) => { if (left <= 0) return; ctx.fillText(l.slice(0, left), bx + 10, by + 29 + i * 12); left -= l.length + 1; });
   if (sc.t / 3 >= st.s.length && (stateT >> 4) % 2) { ctx.fillStyle = col; ctx.fillRect(bx + bw - 14, by + bh - 10, 5, 3); }
   ctx.font = '6px monospace'; ctx.fillStyle = '#6b6388'; ctx.textAlign = 'right';
-  ctx.fillText(isTouch() && !GP.active ? 'tap to go on' : btn(' ') + ' next   ' + btn('k') + ' skip', bx + bw - 6, by + bh + 9); ctx.textAlign = 'left';
+  ctx.fillText(isTouch() && !GP.active ? 'tap to go on' : btn(' ') + ' next', bx + bw - 6, by + bh + 9); ctx.textAlign = 'left';
+  { const b = SKIP_BTN;                                   // not here for the story? one tap and it's gone
+    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeStyle = '#8a80a8'; ctx.lineWidth = 1; ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1);
+    ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+    ctx.fillText('SKIP ' + (isTouch() && !GP.active ? '>>' : '[' + btn('k') + ']'), b.x + b.w / 2, b.y + 11); ctx.textAlign = 'left'; }
 }
 function sceneCamera() {                                     // called inside render's world transform
   const c = scene.cam; if (c.k < 1.02) return;
