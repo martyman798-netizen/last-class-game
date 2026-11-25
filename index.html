@@ -3510,12 +3510,27 @@ function fmtTime(s) { s = Math.round(s); return (s / 60 | 0) + ':' + String(s % 
 
 function saveCheckpoint() {
   if (round <= 0 || endlessMode || tutorial) return;
-  saveJSON('lastclass.run', { round, cls: CLS, gear: Object.assign({}, gear), score, hp: player.hp,
+  putSlot(curSlot, { round, cls: CLS, gear: Object.assign({}, gear), score, hp: player.hp,
                               seen: [...seenLoot], styleSSS: style.sssStage, diff: SET.diff, at: Date.now(),
                               skills: [...learned], pas: passives, lvl: level, xp, pts: pendingPicks, ng: ngPlus });
 }
-const checkpoint = () => loadJSON('lastclass.run');
-const clearCheckpoint = () => saveJSON('lastclass.run', null);
+/* three save slots. The run you're playing saves itself into its slot at every new wave and door;
+   CONTINUE picks up the newest one, LOAD GAME shows all three. */
+let curSlot = 0;
+function slots() {
+  let sl = loadJSON('lastclass.slots');
+  if (!Array.isArray(sl)) {                                   // older saves: the one run becomes slot 1
+    sl = [loadJSON('lastclass.run') || null, null, null];
+    saveJSON('lastclass.slots', sl); saveJSON('lastclass.run', null);
+  }
+  while (sl.length < 3) sl.push(null);
+  return sl;
+}
+function putSlot(i, v) { const sl = slots(); sl[i] = v; saveJSON('lastclass.slots', sl); }
+const newestSlot = () => { let b = -1; slots().forEach((c, i) => { if (c && (b < 0 || (c.at || 0) > (slots()[b].at || 0))) b = i; }); return b; };
+const checkpoint = () => slots()[curSlot] || null;
+const anySave = () => newestSlot() >= 0;
+const clearCheckpoint = () => putSlot(curSlot, null);
 function continueRun() {
   const cp = checkpoint();
   if (!cp) return;
@@ -5978,12 +5993,34 @@ function drawTutorial() {
 }
 
 /* ---------- the title menu ---------- */
-let titleSel = 0;
-function titleItems() { return (checkpoint() ? ['CONTINUE'] : []).concat(['NEW GAME'], loadJSON('lastclass.ngplus') ? ['NEW GAME+'] : [], ['ENDLESS', 'TRAINING', 'SETTINGS', 'CONTROLS']); }
+let titleSel = 0, titlePage = null;        // titlePage: null = the main list, or { kind: 'load' | 'new', sel, sure }
+function titleItems() {
+  if (titlePage) return ['SLOT 1', 'SLOT 2', 'SLOT 3', 'BACK'];
+  return (anySave() ? ['CONTINUE'] : []).concat(['NEW GAME'], anySave() ? ['LOAD GAME'] : [], loadJSON('lastclass.ngplus') ? ['NEW GAME+'] : [],
+                                                ['ENDLESS', 'TRAINING', 'SETTINGS', 'CONTROLS']);
+}
+function startNewIn(i) {
+  curSlot = i; putSlot(i, null);
+  ngPlus = titlePage.ng; titlePage = null; titleSel = 0;
+  tutorial = null; endlessMode = false; state = 'select'; stateT = 0; selIdx = CLASS_KEYS.indexOf(CLS);
+}
 function titleChoose(it) {
   A.init(); A.resume(); A.rank();
-  if (it === 'CONTINUE') continueRun();
-  else if (it === 'NEW GAME' || it === 'NEW GAME+') { ngPlus = it === 'NEW GAME+'; clearCheckpoint(); tutorial = null; endlessMode = false; state = 'select'; stateT = 0; selIdx = CLASS_KEYS.indexOf(CLS); }
+  if (titlePage) {                                           // the slot pages
+    const i = titleItems().indexOf(it), pg = titlePage, cp = slots()[i];
+    if (it === 'BACK') { titlePage = null; titleSel = 0; A.tele(); return; }
+    if (pg.kind === 'load') { if (cp) { curSlot = i; titlePage = null; titleSel = 0; continueRun(); } else A.tele(); return; }
+    if (cp && pg.sure !== i) { pg.sure = i; A.tele(); return; }     // a save there: ask once
+    startNewIn(i); return;
+  }
+  if (it === 'CONTINUE') { curSlot = newestSlot(); continueRun(); }
+  else if (it === 'LOAD GAME') { titlePage = { kind: 'load' }; titleSel = Math.max(0, newestSlot()); }
+  else if (it === 'NEW GAME' || it === 'NEW GAME+') {
+    titlePage = { kind: 'new', ng: it === 'NEW GAME+', sure: -1 };
+    const free = slots().indexOf(null);
+    if (!anySave()) startNewIn(0);                           // nothing saved yet: no need to ask where
+    else titleSel = free >= 0 ? free : 0;
+  }
   else if (it === 'ENDLESS') { ngPlus = false; tutorial = null; endlessMode = true; state = 'select'; stateT = 0; selIdx = CLASS_KEYS.indexOf(CLS); }
   else if (it === 'TRAINING') startTutorial();
   else if (it === 'SETTINGS') openMenu('settings', 'title');
@@ -5995,8 +6032,9 @@ function updateTitle() {
   titleSel = Math.min(titleSel, items.length - 1);
   for (const k of menuQ.splice(0)) {
     if (stateT < 10) continue;
-    if (['a', 'arrowleft', 'w', 'arrowup'].includes(k)) { titleSel = (titleSel + items.length - 1) % items.length; A.tele(); }
-    else if (['d', 'arrowright', 's', 'arrowdown', 'tab'].includes(k)) { titleSel = (titleSel + 1) % items.length; A.tele(); }
+    if (titlePage && ['escape', 'backspace'].includes(k)) { titlePage = null; titleSel = 0; A.tele(); continue; }
+    if (['a', 'arrowleft', 'w', 'arrowup'].includes(k)) { titleSel = (titleSel + items.length - 1) % items.length; if (titlePage) titlePage.sure = -1; A.tele(); }
+    else if (['d', 'arrowright', 's', 'arrowdown', 'tab'].includes(k)) { titleSel = (titleSel + 1) % items.length; if (titlePage) titlePage.sure = -1; A.tele(); }
     else if ([' ', 'enter', 'j'].includes(k)) { titleChoose(items[titleSel]); break; }
   }
   if (state === 'title' && isTouch() && stateT > 10) {          // touch: swipe the pad to move, tap to choose
@@ -6005,7 +6043,8 @@ function updateTitle() {
   }
   clearEdges(); eat(['space', 'enter', 'j', 'k']);
 }
-const titleRow = i => { const n = titleItems().length, w = n > 5 ? 72 : n > 4 ? 84 : 96; return { x: LW / 2 - (n * (w + 6) - 6) / 2 + i * (w + 6), y: 186, w, h: 15 }; };
+const titleRow = i => titlePage ? { x: 34, y: 92 + i * 34 - (i === 3 ? 4 : 0), w: 236, h: i === 3 ? 16 : 28 }
+                                 : { x: 34, y: 104 + i * 18, w: 128, h: 15 };
 function titleTap(x, y) {
   const items = titleItems();
   for (let i = 0; i < items.length; i++) { const r = titleRow(i); if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) { titleSel = i; titleChoose(items[i]); return; } }
@@ -8655,50 +8694,65 @@ function drawBanner() {
   ctx.globalAlpha = 1; ctx.textAlign = 'left';
 }
 
+/* the title: a background (Martinius's picture once it's in, the gym until then), the name
+   top left, and a plain list under it. Everything else lives in CONTROLS. */
+const TITLE_BG = (() => { const im = new Image(); im.onload = () => { im.ok = true; }; if (typeof TITLE_ART !== 'undefined') im.src = TITLE_ART; return im; })();
+function slotLine(cp) {
+  if (!cp) return ['- empty -', ''];
+  const c = CLASSES[cp.cls], r = ROUNDS[cp.round] || {}, d = new Date(cp.at || 0);
+  const when = (Date.now() - (cp.at || 0) < 864e5 ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString());
+  return [(c ? c.name : '?') + '   LV ' + (cp.lvl || 1) + (cp.ng ? '  NG+' : ''), 'wave ' + (cp.round + 1) + (r.name ? ' - ' + r.name.toLowerCase() : '') + '   ' + when];
+}
 function drawTitle() {
-  ctx.fillStyle = 'rgba(20,16,34,.8)'; ctx.fillRect(0, 0, LW, LH);
-  ctx.textAlign = 'center';
-  ctx.font = 'bold 28px monospace';
-  ctx.fillStyle = '#ff6b35'; ctx.fillText('LAST', LW / 2, 50);
-  ctx.fillStyle = '#ffd23f'; ctx.fillText('CLASS', LW / 2, 78);
-  ctx.font = 'bold 9px monospace'; ctx.fillStyle = '#fff';
-  ctx.fillText('you booked them. now survive them.', LW / 2, 98);
-
-  ctx.font = '7px monospace';
-  ctx.fillStyle = '#b8aed0';
-  if (isTouch()) {
-    ctx.fillText('LEFT STICK move     RIGHT PAD: swipe <- or -> to hit', LW / 2, 116);
-    ctx.fillText('swipe up jump   swipe down grab   tap heavy   HOLD = charge', LW / 2, 127);
-  } else {
-    ctx.fillText(GP.active ? 'MOVE stick     LIGHT X     HEAVY Y     JUMP A' : 'MOVE wasd     LIGHT j     HEAVY k     JUMP space', LW / 2, 116);
-    ctx.fillText(GP.active ? 'BLOCK RB      GRAB / THROW B      WHISTLE LB' : 'BLOCK hold h      GRAB / THROW l      WHISTLE u', LW / 2, 127);
+  if (TITLE_BG.ok) { ctx.drawImage(TITLE_BG, 0, 0, LW, LH); }
+  else {
+    ctx.fillStyle = 'rgba(20,16,34,.55)'; ctx.fillRect(0, 0, LW, LH);
+    CLASS_KEYS.forEach((k, i) => {                                       // the three coaches, waiting for their class
+      const set = FS[CLASSES[k].sheet], f = set && ((stateT >> 5) + i) % 2 && set.f.idle1 ? 'idle1' : 'idle0';
+      ctx.save(); ctx.translate(318 + i * 52, 244 - (i === 1 ? 4 : 0)); ctx.scale(2, 2);
+      drawCharFrame(CLASSES[k].sheet, f, 0, 0, -1, null, 0, null); ctx.restore();
+    });
   }
-  ctx.fillStyle = '#9fd0ff';
-  ctx.fillText('block just before a hit lands = PARRY     red flash = unblockable, jump it', LW / 2, 140);
-  ctx.fillStyle = '#ffd23f';
-  ctx.fillText(isTouch() ? 'swipe, swipe, tap launches - then jump and juggle' : 'j,j,k launches - then jump and juggle them', LW / 2, 150);
-  ctx.fillStyle = '#9fd0ff';
-  ctx.fillText('grab a crate or a floored client, press again to throw', LW / 2, 160);
-  ctx.fillStyle = '#8bc34a';
-  ctx.fillText(isTouch() ? 'PARKOUR: run at low stuff to vault - swipe up next to a ledge to climb - swipe down mid-air over someone = CUTTER'
-                          : 'PARKOUR: run at low stuff to vault - jump next to a ledge to climb - L mid-air over someone = CUTTER', LW / 2, 170);
+  const g = ctx.createLinearGradient(0, 0, 230, 0);                  // keep the list readable on any picture
+  g.addColorStop(0, 'rgba(14,10,26,.88)'); g.addColorStop(0.75, 'rgba(14,10,26,.6)'); g.addColorStop(1, 'rgba(14,10,26,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 290, LH);
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 28px monospace';
+  ctx.fillStyle = '#ff6b35'; ctx.fillText('LAST', 32, 46);
+  ctx.fillStyle = '#ffd23f'; ctx.fillText('CLASS', 32, 72);
+  ctx.font = 'bold 7px monospace'; ctx.fillStyle = '#fff'; if (!titlePage) ctx.fillText('you booked them. now survive them.', 34, 86);
 
-
-  const line = [['shades', 70], ['dino', 158], ['blonde', 322], ['flower', 412]];
-  line.forEach(([n, x]) => drawRaw(SPR[n], x, 254, x < LW / 2 ? 1 : -1, 1, 1, null));
-  drawRaw(SPR['instructor'], LW / 2, 254, 1, 1, 1, null);
-
-  titleItems().forEach((it, i) => {
+  const items = titleItems();
+  if (titlePage) {
+    ctx.font = 'bold 9px monospace'; ctx.fillStyle = '#ffd23f';
+    ctx.fillText(titlePage.kind === 'load' ? 'LOAD GAME' : titlePage.ng ? 'NEW GAME+ : PICK A SLOT' : 'NEW GAME : PICK A SLOT', 34, 84 + 0);
+  }
+  items.forEach((it, i) => {
     const r = titleRow(i), sel = i === titleSel;
-    ctx.fillStyle = sel ? '#ff6b35' : 'rgba(255,255,255,.08)'; ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.font = 'bold 8px monospace'; ctx.fillStyle = sel ? '#1b1630' : '#fff'; ctx.fillText(it, r.x + r.w / 2, r.y + 10);
+    if (titlePage && i < 3) {
+      const cp = slots()[i], [l1, l2] = slotLine(cp), sure = titlePage.sure === i;
+      ctx.fillStyle = sel ? (sure ? '#e53935' : '#ff6b35') : 'rgba(255,255,255,.08)'; ctx.fillRect(r.x, r.y, r.w, r.h);
+      ctx.font = 'bold 8px monospace'; ctx.fillStyle = sel ? '#1b1630' : '#fff';
+      ctx.fillText(it, r.x + 6, r.y + 11);
+      ctx.fillText(sure ? 'OVERWRITE? PRESS AGAIN' : l1, r.x + 56, r.y + 11);
+      ctx.font = '7px monospace'; ctx.fillStyle = sel ? '#3a2a1a' : cp ? '#b8aed0' : '#6b6388';
+      ctx.fillText(sure ? 'this save will be gone' : l2, r.x + 56, r.y + 22);
+      return;
+    }
+    ctx.fillStyle = sel ? '#ff6b35' : 'rgba(255,255,255,.07)'; ctx.fillRect(r.x, r.y, r.w, r.h);
+    if (sel) { ctx.fillStyle = '#ffd23f'; ctx.fillRect(r.x - 4, r.y, 2, r.h); }
+    ctx.font = 'bold 8px monospace'; ctx.fillStyle = sel ? '#1b1630' : '#fff'; ctx.fillText(it, r.x + 8, r.y + 10);
+    ctx.font = '6px monospace';                                        // a small note beside some rows
+    let note = null, col = '#8bc34a';
+    if (it === 'CONTINUE') { const cp = slots()[newestSlot()]; if (cp) note = slotLine(cp)[1].split('   ')[0]; }
+    else if (it === 'ENDLESS' && endlessBest.wave) { note = 'best: wave ' + endlessBest.wave; col = '#ff6b35'; }
+    else if (it === 'TRAINING' && !SET.tutDone) { note = 'new here? start here'; col = '#ffd23f'; }
+    if (note) { ctx.fillStyle = col; ctx.fillText(note, r.x + r.w + 6, r.y + 10); }
   });
-  if (endlessBest.wave) { const i = titleItems().indexOf('ENDLESS'), r = titleRow(i); ctx.font = '6px monospace'; ctx.fillStyle = '#ff6b35'; ctx.fillText('best: wave ' + endlessBest.wave, r.x + r.w / 2, 210); }
-  if (!SET.tutDone) { const i = titleItems().indexOf('TRAINING'), r = titleRow(i); ctx.font = '6px monospace'; ctx.fillStyle = '#ffd23f'; ctx.fillText('new here? start here', r.x + r.w / 2, 210); }
-  if (titleItems()[0] === 'CONTINUE') { const cp = checkpoint(); ctx.font = '6px monospace'; ctx.fillStyle = '#8bc34a';
-    ctx.fillText('saved: wave ' + (cp.round + 1) + ' - ' + (CLASSES[cp.cls] ? CLASSES[cp.cls].name : ''), titleRow(0).x + titleRow(0).w / 2, 210); }
-  ctx.font = 'bold 7px monospace'; ctx.fillStyle = '#ffd23f';
-  if (best > 0) ctx.fillText('BEST ' + String(best).padStart(6, '0'), LW / 2, 180);
+  ctx.font = '6px monospace'; ctx.fillStyle = '#6b6388';
+  ctx.fillText(isTouch() && !GP.active ? 'tap to choose' : titlePage ? 'up/down choose   enter select   esc back' : 'up/down choose   enter select', 34, LH - 10);
+  ctx.font = 'bold 7px monospace'; ctx.fillStyle = '#ffd23f'; ctx.textAlign = 'right';
+  if (best > 0 && !titlePage) ctx.fillText('BEST ' + String(best).padStart(6, '0'), LW - 12, 16);
   ctx.textAlign = 'left';
 }
 
@@ -8813,6 +8867,7 @@ function boot() {
     if (state === 'levelup' && lvlCard) { closeTree(); return true; }
     if (paused) { togglePause(); return true; }
     if (state === 'play') { togglePause(); return true; }
+    if (state === 'title' && titlePage) { titlePage = null; titleSel = 0; return true; }
     if (state !== 'title') { state = 'title'; stateT = 0; M.play('title'); return true; }
     return false;
   };
@@ -8914,6 +8969,7 @@ function boot() {
     ev: () => worldEv && { need: worldEv.need, phase: worldEv.phase, ko: worldEv.ko, total: worldEv.total, through: worldEv.through, wave: worldEv.wave },
     only: type => { flowOff = true; enemies.length = 0; spawnQ.length = 0; spawnEnemy(type); },
     spawn: type => spawnEnemy(type),
+    save: () => { saveCheckpoint(); return curSlot; },
     trait: () => ({ zen: player.zenT, cad: player.cad, peace: player.peaceT, hp: player.hp, max: player.maxhp, barks: enemies.filter(e => e.bark).map(e => e.type + ': ' + e.bark.txt) }),
     hitFoe: n => { const e = enemies.find(e => !e.dead && !e.crowd); for (let i = 0; i < n; i++) addCombo(); return !!e; },
     barkNow: (kind) => { barkCool = 0; const e = enemies.find(e => !e.dead && !e.crowd); if (e) bark(e, kind || 'in', 1); return e && e.bark && e.bark.txt; },
