@@ -2324,9 +2324,10 @@ const PMOVES = {
 const CLASSES = {
   yoga: {
     name: 'YOGA INSTRUCTOR', sheet: 'inst_yoga', col: '#ce93d8',
-    hp: 85, speed: 1.12, runK: 1.05, dmg: 0.92, stamRegen: 1.25, parry: 14,
-    blurb: ['fast and flexible.', 'long kicks, easy parries.', 'breaks easily.'],
-    bars: { HEALTH: 2, POWER: 2, SPEED: 4 },
+    hp: 90, speed: 1.1, runK: 1.05, dmg: 0.95, stamRegen: 1.35, parry: 15, dodgeIF: 20, dodgeStam: 13,
+    blurb: ['long kicks, easy parries.', 'heals when left in peace.', 'breaks easily.'],
+    bars: { HEALTH: 2, POWER: 2, SPEED: 3, STAMINA: 4 },
+    trait: ['ZEN', 'perfect parry or dodge:', '+50% damage, free attacks'],
     sig: ['HIGH KICK', 'SPINNING BACK KICK', 'WARRIOR PALMS  (heavy)'],
     moves: { l2: { reach: 50, dmg: 9, sever: 'head' },
              l3: { reach: 48, dmg: 14, wide: true, knockdown: true, sever: 'leg' },
@@ -2337,9 +2338,11 @@ const CLASSES = {
   },
   bb: {
     name: 'BODYBUILDER', sheet: 'inst_bb', col: '#e53935',
-    hp: 130, speed: 0.9, runK: 0.95, dmg: 1.15, stamRegen: 0.95, parry: 9, armor: true, throwK: 1.3,
-    blurb: ['slow and enormous.', 'hits like a truck.', 'a heavy swing cannot be stopped.'],
-    bars: { HEALTH: 4, POWER: 4, SPEED: 1 },
+    hp: 125, speed: 0.86, runK: 0.92, dmg: 1.12, stamRegen: 0.78, parry: 8, armor: true, throwK: 1.5,
+    dodgeIF: 12, dodgeStam: 26, dodgeV: 0.8, stamK: 1.25,
+    blurb: ['hits like a truck, throws far.', 'gasses out fast.', 'clumsy dodge, tiny parry window.'],
+    bars: { HEALTH: 4, POWER: 4, SPEED: 1, STAMINA: 1 },
+    trait: ['IRON', 'a heavy swing can\'t be', 'stopped once it starts'],
     sig: ['BODY HOOK', 'AXE-HANDLE SMASH', 'HAYMAKER  (unstoppable)'],
     moves: { l2: { dmg: 10, reach: 38 },
              l3: { dmg: 17, reach: 42, wind: 8, knockdown: true, sever: 'head' } },
@@ -2348,9 +2351,10 @@ const CLASSES = {
   },
   cyc: {
     name: 'SPIN INSTRUCTOR', sheet: 'inst_cyc', col: '#1e88e5',
-    hp: 100, speed: 1.05, runK: 1.22, dmg: 1.0, stamRegen: 1.1, parry: 9,
-    blurb: ['all cadence.', 'sprints in, knees out.', 'the dash attack hits hard.'],
-    bars: { HEALTH: 3, POWER: 3, SPEED: 3 },
+    hp: 95, speed: 1.0, runK: 1.3, dmg: 0.86, stamRegen: 1.1, parry: 9, dodgeIF: 15, dodgeStam: 16,
+    blurb: ['weak start, strong finish.', 'fastest sprint, big dash attack.', 'get hit and the rhythm is gone.'],
+    bars: { HEALTH: 3, POWER: 1, SPEED: 4, STAMINA: 3 },
+    trait: ['CADENCE', 'every clean hit: faster and', 'harder, up to +60%'],
     sig: ['CLINCH KNEE', 'FRONT KICK', 'FLYING KNEE  (heavy, travels)'],
     moves: { l2: { dmg: 8, reach: 32, sever: 'arm' },
              l3: { dmg: 14, reach: 46, knockdown: true, sever: 'leg' },
@@ -2362,6 +2366,52 @@ const CLASSES = {
   }
 };
 const CLASS_KEYS = ['yoga', 'bb', 'cyc'];
+/* what makes each class its own, beyond the numbers:
+   yoga - ZEN after a perfect parry or dodge (harder hits, free attacks), counters hit harder,
+          and INNER PEACE: left alone for a few seconds, he heals back up to 70%.
+   bb   - IRON: a heavy swing can't be interrupted (see hitPlayer). Pays for it in stamina.
+   cyc  - CADENCE: each clean hit +3% damage, a little faster; a hit on him resets it. */
+function classK(p, mv) {
+  if (CLS === 'yoga') return (p.zenT > 0 ? 1.5 : 1) * (mv.name === 'counter' ? 1.4 : 1);
+  if (CLS === 'cyc') return 1 + (p.cad || 0) * 0.03;
+  return 1;
+}
+function startZen(p) {
+  if (CLS !== 'yoga') return;
+  if (!(p.zenT > 0)) { say(p.x, p.y - 84, 'ZEN', '#ce93d8', true); ring(p.x, p.y - 24, '#ce93d8', 5, 60); A.tone(300, 900, 0.5, 'sine', 0.1); }
+  p.zenT = 240;
+}
+function stepClassTrait(p) {
+  if (p.zenT > 0) { p.zenT--; if (p.zenT % 5 === 0) burst(p.x + rnd(-8, 8), p.y - rnd(6, 40), 1, '#ce93d8', 0.6); }
+  if (p.cad > 0) {
+    if (--p.cadT <= 0) { p.cad--; p.cadT = 18; }
+    if (p.cad >= 10 && (p.st === 'run' || p.st === 'attack') && stateT % 3 === 0) burst(p.x - p.face * 8, p.y - rnd(8, 36), 1, '#4fc3f7', 0.8);
+  }
+  if (CLS === 'yoga' && p.hp > 0 && state === 'play') {
+    p.peaceT = (p.peaceT || 0) + 1;
+    if (p.peaceT > 240 && p.hp < p.maxhp * 0.7 && p.peaceT % 30 === 0) {
+      p.hp = Math.min(Math.round(p.maxhp * 0.7), p.hp + 1); p.peaceHeal = (p.peaceHeal || 0) + 1;
+      if (p.peaceHeal % 5 === 0) say(p.x, p.y - 64, '+5 INNER PEACE', '#a5d6a7');
+    }
+  }
+}
+function drawClassTrait() {
+  const p = player, x = 212, y = 9;
+  ctx.font = 'bold 5px monospace'; ctx.textAlign = 'left';
+  if (CLS === 'cyc') {
+    const c = p.cad || 0, hot = c >= 10;
+    ctx.fillStyle = hot ? '#4fc3f7' : '#5d7d99'; ctx.fillText('CADENCE ' + (c ? '+' + c * 3 + '%' : ''), x, y + 5);
+    bar(x, y + 8, 60, 3, c / 20, c >= 20 && stateT % 10 < 5 ? '#fff' : '#4fc3f7');
+  } else if (CLS === 'yoga') {
+    const z = p.zenT > 0, peace = p.peaceT > 240 && p.hp < p.maxhp * 0.7;
+    ctx.fillStyle = z ? '#ce93d8' : peace ? '#a5d6a7' : '#6b5a7a';
+    ctx.fillText(z ? 'ZEN  +50%' : peace ? 'INNER PEACE' : 'ZEN', x, y + 5);
+    bar(x, y + 8, 60, 3, z ? p.zenT / 240 : 0, z && stateT % 12 < 6 ? '#f3e5f5' : '#ce93d8');
+  } else if (CLS === 'bb') {
+    const iron = p.st === 'attack' && p.move && p.move.name === 'heavy';
+    ctx.fillStyle = iron ? '#ffb74d' : '#7a5a4a'; ctx.fillText(iron ? 'IRON!' : 'IRON', x, y + 5);
+  }
+}
 // how much tougher everyone is than their listed health
 const HP_K = 2.6, BOSS_HP_K = 2.0;
 // how often each kind puts its guard up against a light attack (elites and bosses more)
@@ -3110,6 +3160,7 @@ function makePlayer() {
   p.face = 1;
   p.chain = 0; p.chainT = 0;        // combo route position
   p.iframes = 0; p.blockT = 0; p.blocking = false;
+  p.zenT = 0; p.cad = 0; p.cadT = 0; p.peaceT = 0; p.peaceHeal = 0;
   p.super = 0; p.maxsuper = 100;
   p.downT = 0; p.gassed = 0;
   p.canCancel = false;
@@ -3612,6 +3663,7 @@ function spawnEnemy(type) {
   e.hasToken = false;
   e.setState('enter');
   enemies.push(e);
+  if (!t.crowd) e.barkIn = rnd(25, 70) | 0;
   if (type === 'yoga') { e.x = 386; e.y = DEPTH_TOP + 8; e.face = -1; }
   if (ngPlus && !e.crowd) e.hp = e.maxhp = Math.round(e.maxhp * 1.5);
   if (!seen.has(type)) { seen.add(type); newFoeCard(type); }
@@ -3644,6 +3696,130 @@ function dust(x, y, n, dir) {
 }
 function vibrate(a, frames, amp) { a.vibeUntil = stateT + frames + 1; a.vibeAmp = amp; }
 function ring(x, y, col, r0, r1) { parts.push({ ring: true, x, y, r: r0, r1, col, life: 16 }); }
+/* ======================= TRASH TALK =======================
+   Everyone has an opinion about the coach. A line when they walk in, when they land one
+   on him, and when he puts them on the floor - in a speech bubble over their head. */
+const BARKS = {
+  shades:  { in: ['I want a refund.', 'Is THIS the class? Ugh.', 'My online coach is way better.', 'Are you even certified?'],
+             hit: ['Posting this.', 'Tag yourself, loser.', 'That one\'s going on my story.'],
+             hurt: ['My NAILS!', 'One star. ONE.', 'I\'m leaving a review!'] },
+  dino:    { in: ['RAWR. I paid for this.', 'Cardio is a scam.', 'This class is extinct.'],
+             hit: ['EXTINCTION!', 'Feel the Jurassic!', 'Meteor incoming!'],
+             hurt: ['Not the costume!', 'My lawyer-saurus will hear of this!'] },
+  blonde:  { in: ['I only do legs.', 'You call that a warm-up?', 'Ew, who let YOU teach?'],
+             hit: ['Leg day, baby!', 'Squat THAT.', 'Should\'ve trained legs.'],
+             hurt: ['My GLUTES!', 'I\'m telling the front desk!'] },
+  spotter: { in: ['Need a spot, coach?', 'I got you, bro!', 'Bro. BRO. Bro.'],
+             hit: ['BRO HUG!', 'Feel the love, bro!', 'Two more reps, bro!'],
+             hurt: ['Bro... not cool.', 'Bro, that\'s illegal.'] },
+  physio:  { in: ['Did you even stretch? Didn\'t think so.', 'I fix them as fast as you break them.'],
+             hit: ['Hold still, I\'m adjusting you.', '*crack*', 'That\'ll be 90 bucks.'],
+             hurt: ['Misdiagnosis!', 'My insurance won\'t cover this!'] },
+  heckler: { in: ['BOOOO!', 'First class? It SHOWS.', 'Get a real job!'],
+             hit: ['BULLSEYE!', 'Hydrate, coach!', 'Ha! Right in the ego!'],
+             hurt: ['I\'m just WATCHING!', 'Free speech!!'] },
+  flower:  { in: ['Your energy is SO negative.', 'I\'m only here for the vibes.', 'Your aura is beige.'],
+             hit: ['Bloom, baby.', 'Peace and love!', 'Karma!'],
+             hurt: ['My chakras!', 'Rude!! So rude!'] },
+  bulker:  { in: ['MOVE. That\'s my bench.', 'Do you even lift?', 'Out of my mirror.'],
+             hit: ['LIGHTWEIGHT!', 'YEAH BUDDY!', 'Feel the PUMP!'],
+             hurt: ['Was that the warm-up?', '...ow.'] },
+  bulkerBoss: { in: ['This is MY gym.', 'I\'m gonna ruin your career.', 'Nobody teaches here without MY say.'],
+             hit: ['Cancel your membership!', 'You\'re done in this town!', 'Nobody spots you here!'],
+             hurt: ['Lucky shot!', 'You\'ll never work here again!'] },
+  jamal:   { in: ['Nice outfit, nerd!', 'Gimme your lunch money!', 'Ooh, a PERSONAL TRAINER!'],
+             hit: ['Haha, owned!', 'Get off my street!', 'Ring ring, loser!'],
+             hurt: ['Hey, not the bike!', 'I\'m telling my mum!'] },
+  clark:   { in: ['Smile for the camera...', 'Say cheese, coach.', 'Don\'t mind me...'],
+             hit: ['Got your good side.', 'FLASH!', 'Ooh, that\'s a keeper.'],
+             hurt: ['Deleting! Deleting!', 'My LENS!'] },
+  pete:    { in: ['Leg day? Never heard of it.', 'Check out these GUNS.', 'Arms. Just arms.'],
+             hit: ['BICEPS!', 'Arm day EVERY day!', 'Curl THIS!'],
+             hurt: ['My legs! I mean... what legs?', 'Okay, maybe legs matter.'] },
+  cashier: { in: ['Next! ...ugh. You.', 'We\'re closed. Kidding. Get out.', 'What do YOU want?'],
+             hit: ['Have a nice day!', 'Want a beating with that?', 'Receipt\'s in the bag!'],
+             hurt: ['I\'m on MINIMUM WAGE!', 'I want to speak to my manager!'] },
+  cook:    { in: ['WTF are you doing in the kitchen?!', 'Employees only, buddy!', 'Hairnet. NOW.'],
+             hit: ['Extra greasy!', 'Order up!', 'Deep fried!'],
+             hurt: ['My fryer!', 'I\'m on my BREAK!'] },
+  chef:    { in: ['GET OUT OF MY KITCHEN!', 'Who let a CUSTOMER back here?!', 'You call that a kitchen stance?!'],
+             hit: ['Chop chop!', 'Well done!', 'Raw! You\'re RAW!'],
+             hurt: ['Mon dieu!', 'Who seasoned you?!'] },
+  manager: { in: ['I\'m gonna ruin your career.', 'Let\'s circle back on this.', 'You\'re not on the schedule.'],
+             hit: ['Consider that a written warning.', 'Synergy!', 'Per my last email!'],
+             hurt: ['This goes on your review!', 'HR! HR!!'] },
+  cop:     { in: ['Sir, put down the dumbbell.', 'License and gym card, please.', 'We got a noise complaint.'],
+             hit: ['Stop resisting!', 'You have the right to stay sore.', 'Book him!'],
+             hurt: ['Officer down! ...kinda!', 'I was on my DONUT break!'] },
+  swat:    { in: ['BREACH! BREACH!', 'Hands where we can see them!', 'Target: one angry coach.'],
+             hit: ['Target subdued!', 'Stay DOWN!', 'Clear!'],
+             hurt: ['Shield\'s cracked!', 'Need backup!'] },
+  soldier: { in: ['Hostile instructor sighted!', 'Drop and give me twenty!', 'This is NOT a drill!'],
+             hit: ['HOOAH!', 'Basic training, buddy.', 'You call that a fitness test?'],
+             hurt: ['MEDIC!', 'Who trained this guy?!'] },
+  yoga:    { hit: ['Breathe through the pain.', 'Your form is terrible.', 'Let go of your anger.', 'She chose ME, buddy.'],
+             hurt: ['My AURA!', 'That is NOT very zen!', 'Namaste... away from me!'] }
+};
+const BARK_FLOOR = ['Class dismissed!', 'Get up, coach!', 'LOL. Coach is down!', 'Is that your best?', 'Worst. Class. Ever.'];
+let barkCool = 0;
+function barkKey(e) { return BARKS[e.type] ? e.type : String(e.type || '').replace(/[XC]$/, '').replace(/Boss$/, ''); }
+function bark(e, kind, chance, pool) {
+  if (!e || e.dead || e.crowd || scene || state !== 'play' || barkCool > 0 || Math.random() > chance) return;
+  const lines = pool || (BARKS[barkKey(e)] || {})[kind];
+  if (!lines || !lines.length) return;
+  if (enemies.filter(o => o.bark).length >= 2) return;
+  let txt = pick(lines);
+  if (lines.length > 1 && e.lastBark === txt) txt = pick(lines);
+  e.bark = { txt, t: 0, life: 110 + txt.length * 2 }; e.lastBark = txt;
+  barkCool = 150 + rnd(0, 90);
+}
+const HEADTOP = {};
+function headTop(spr) {                                  // how far above the feet the top of the head is
+  if (spr in HEADTOP) return HEADTOP[spr];
+  const set = FS[spr], fr = set && (set.f.idle0 || set.f.idle);
+  let v = 60;
+  if (fr) {
+    const m = set.meta, c = document.createElement('canvas'); c.width = m.w; c.height = m.h;
+    const g = c.getContext('2d');
+    if (fr.layers) { for (const k of DRAW_ORDER) if (fr.layers[k]) g.drawImage(fr.layers[k].img, 0, 0); } else g.drawImage(fr.img, 0, 0);
+    const px = g.getImageData(0, 0, m.w, m.h).data;
+    let top = 0; outer: for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) if (px[(y * m.w + x) * 4 + 3] > 40) { top = y; break outer; }
+    v = (m.anchor[1] + 1 - top) * SCALE;
+  }
+  return (HEADTOP[spr] = v);
+}
+function stepBarks() {
+  if (barkCool > 0) barkCool--;
+  enemies.forEach(e => {
+    if (e.barkIn > 0 && --e.barkIn === 0) bark(e, 'in', 0.55);
+    if (e.barkUp && !e.dead && e.st !== 'down' && e.st !== 'air' && e.st !== 'thrown') { e.barkUp = 0; bark(e, 'hurt', 0.5); }
+    if (!e.bark) return;
+    if (e.dead || e.st === 'down' || ++e.bark.t > e.bark.life) e.bark = null;
+  });
+}
+function drawBarks() {
+  enemies.forEach(e => {
+    const b = e.bark; if (!b) return;
+    const k = Math.min(1, b.t / 5), fade = clamp((b.life - b.t) / 12, 0, 1);
+    ctx.font = 'bold 7px monospace';
+    const words = b.txt.split(' '), lines = []; let ln = '';
+    words.forEach(w => { const t = ln ? ln + ' ' + w : w; if (ctx.measureText(t).width > 96 && ln) { lines.push(ln); ln = w; } else ln = t; });
+    if (ln) lines.push(ln);
+    const w = Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width))) + 10, h = lines.length * 9 + 6;
+    const hx = e.x, hy = e.y - headTop(e.sprName) - (e.airY || 0) - 14;
+    const bx = clamp(Math.round(hx - w / 2), 4, LW - w - 4), by = Math.round(hy - h - 4 + (1 - k) * 4);
+    ctx.save(); ctx.globalAlpha = fade * k;
+    ctx.fillStyle = '#000'; ctx.fillRect(bx - 1, by - 1, w + 2, h + 2);
+    ctx.fillStyle = '#fff'; ctx.fillRect(bx, by, w, h);
+    const tx = clamp(Math.round(hx), bx + 4, bx + w - 6);          // the tail points at whoever said it
+    ctx.fillStyle = '#000'; ctx.fillRect(tx - 1, by + h, 5, 2); ctx.fillRect(tx, by + h + 2, 3, 2); ctx.fillRect(tx + 1, by + h + 4, 1, 1);
+    ctx.fillStyle = '#fff'; ctx.fillRect(tx, by + h, 3, 2); ctx.fillRect(tx + 1, by + h + 2, 1, 2);
+    ctx.fillStyle = '#1b1630'; ctx.textAlign = 'center';
+    lines.forEach((l, i) => ctx.fillText(l, bx + w / 2, by + 10 + i * 9));
+    ctx.restore();
+  });
+  ctx.textAlign = 'left';
+}
 function say(x, y, txt, col, big) { floats.push({ x, y, txt, col: col || '#fff', life: 44, vy: -0.75, big }); }
 
 /* ============================== COMBAT ============================== */
@@ -3667,6 +3843,11 @@ function hitboxHits(att, def, reach, wide) {
 
 function addCombo() {
   const p = player;
+  if (CLS === 'cyc') {
+    const was = p.cad || 0; p.cad = Math.min(20, was + 1); p.cadT = 150;
+    if (was < 10 && p.cad >= 10) { say(p.x, p.y - 74, 'IN THE ZONE', '#4fc3f7', true); A.tone(500, 1000, 0.2, 'square', 0.06); }
+    if (was < 20 && p.cad >= 20) { say(p.x, p.y - 74, 'MAX CADENCE', '#fff', true); ring(p.x, p.y - 24, '#4fc3f7', 5, 50); A.tone(700, 1400, 0.3, 'square', 0.07); }
+  }
   combo++; comboT = 112;
   if (combo > comboBest) comboBest = combo;
   if (roundStats && combo > roundStats.combo) roundStats.combo = combo;
@@ -3805,7 +3986,7 @@ function playerHit(e, mv) {
   const kick = KICKS[CLS].includes(mv.name) ? 1 + perk('kick') : 1;          // steel-toes
   const gearK = (mv.name === 'l1' ? 1 + perk('jab') : 1) * (mv.name === 'heavy' ? 1 + perk('heavyK') : 1) * (/^air/.test(mv.name) ? 1 + perk('airK') : 1)
               * (e.st === 'air' ? 1 + perk('juggleK') : 1) * (p0.pkT > 0 ? 1 + perk('pkK') : 1) * (p0.wkT > 0 ? 1 + perk('wkK') : 1) * (e.brokenT > 0 ? 1.5 : 1);
-  const mult = comboMult() * C().dmg * (1 + perk('dmg')) * rage * fury * kick * gearK * (absurd('stylengine') ? 1 + styleRank() * 0.15 : 1);
+  const mult = comboMult() * C().dmg * classK(p0, mv) * (1 + perk('dmg')) * rage * fury * kick * gearK * (absurd('stylengine') ? 1 + styleRank() * 0.15 : 1);
   if (!p0.furyT) {                                    // hits fill the fury meter
     p0.fury = Math.min(100, p0.fury + (mv.dmg > 12 ? 7 : 3.6) * (1 + perk('furyK')));
     if (p0.fury >= 100) enterFury(p0);
@@ -3904,7 +4085,9 @@ function playerHit(e, mv) {
 }
 
 function knockDown(e) {
+  if (e.bark) e.bark = null;
   e.setState('down', 72);
+  e.barkUp = 1;                                    // a word or two once he's back up
   e.poise = e.maxpoise;
   e.vx += player.face * 4;
   if (e.hasToken) { e.hasToken = false; }
@@ -3973,7 +4156,7 @@ function hitPlayer(e, mv) {
       A.parry();
       hitStop = 11; shake = 5; flashScreen = 6;
       ring(p.x + p.face * 14, p.y - 30, '#fff', 5, 30);
-      say(p.x, p.y - 60, 'PARRY!', '#4fc3f7', true); styleAdd('parry', 20);
+      say(p.x, p.y - 60, 'PARRY!', '#4fc3f7', true); styleAdd('parry', 20); startZen(p);
       if (roundStats) roundStats.parry++;
       if (perk('parryHeal')) { p.hp = Math.min(p.maxhp, p.hp + perk('parryHeal')); say(p.x, p.y - 72, '+' + perk('parryHeal'), '#8bc34a'); }
       p.super = Math.min(p.maxsuper, p.super + 18 * (1 + perk('superK')));
@@ -4037,8 +4220,12 @@ function hitPlayer(e, mv) {
     else { c.ref.vx = rnd(-2, 2); c.ref.vz = 1.4; }
   }
   p.hp -= dmg; dmgTaken += dmg;
+  p.peaceT = 0;
+  if (p.cad >= 5) say(p.x, p.y - 76, 'RHYTHM LOST', '#90caf9');
+  p.cad = 0;
   if (e && e.t && e.t.boss && e.pips) { e.pips = 0; say(e.x, e.y - 94, 'BREAK RESET', '#6b6388'); }
   styleHurt(mv.knockdown);
+  if (e && e.t) bark(e, 'hit', mv.knockdown ? 0.7 : 0.3, mv.knockdown && Math.random() < 0.4 ? BARK_FLOOR : null);
   p.iframes = mv.knockdown ? 60 : 42;
   p.flash = 9;
   combo = 0;
@@ -4072,6 +4259,7 @@ function hitPlayer(e, mv) {
 /* ============================== PLAYER ============================== */
 function updatePlayer() {
   const p = player;
+  stepClassTrait(p);
   p.anim += (p.st === 'walk' ? 0.24 : 0.09);
   p.animT++;
   if (p.turnT > 0) p.turnT--;
@@ -4322,7 +4510,7 @@ function updatePlayer() {
     if (!running && Math.abs(iy) > Math.abs(ix) * 1.3) p.view = iy < 0 ? 'back' : 'front';
     else p.view = 'side';
     const wind = T.charging && p.charge > 0 ? 0.45 : 1;      // you shuffle while winding up a heavy
-    const spd = C().speed * (1 + perk('speed')) * (running ? C().runK * (1 + perk('run')) : 1);
+    const spd = C().speed * (1 + (p.cad || 0) * 0.01) * (1 + perk('speed')) * (running ? C().runK * (1 + perk('run')) : 1);
     p.vx += ix * (running ? 0.92 : 0.5) * wind * spd;
     p.vy += iy * (running ? 0.52 : 0.42) * wind * spd;
     if (running && p.animT % 9 === 0) burst(p.x - p.face * 6, p.y, 2, '#d7c3a1', 0.8);
@@ -4511,12 +4699,13 @@ function startChain(kind, threat, air) {
     }
   }
   p.chainT = 34 + perk('combo');
+  if (CLS === 'cyc' && p.cad > 0) mv = Object.assign({}, mv, { rec: Math.max(3, Math.round(mv.rec * (1 - p.cad * 0.015))) });
   p.move = mv;
   p.hitSet = new Set();
   p.hitLanded = false;
   p.canCancel = false;
   p.setState('attack', mv.wind + mv.act + mv.rec);
-  p.stam -= mv.stam;
+  p.stam -= p.zenT > 0 ? 0 : mv.stam * (C().stamK || 1);
   p.vx += p.face * (mv.travel ? mv.travel * (1 + (mv.charged || 0) * 0.4)
                    : mv.name === 'heavy' ? 2.2 * (1 + (mv.charged || 0)) : mv.name === 'l3' ? 3.2
                    : mv.name === 'dash' ? 4 : air ? 0.6 : 1.5);
@@ -4559,13 +4748,13 @@ function resolvePlayerAttack(mv) {
 
 function startDodge(ix, iy) {
   const p = player;
-  p.stam -= 18 * (1 - perk('dodgeCost'));
+  p.stam -= (C().dodgeStam || 18) * (1 - perk('dodgeCost'));
   p.setState('dodge', 22);
-  p.iframes = 15; p.dodgeT = 0; p.blocking = false;
+  p.iframes = C().dodgeIF || 15; p.dodgeT = 0; p.blocking = false;
   checkPerfect(p, 'dodge');
   const m = Math.hypot(ix, iy);
   const dx = m > 0.2 ? ix / m : -p.face, dy = m > 0.2 ? iy / m : 0;
-  p.vx = dx * 7.4; p.vy = dy * 4.2;
+  p.vx = dx * 7.4 * (C().dodgeV || 1); p.vy = dy * 4.2 * (C().dodgeV || 1);
   p.chain = 0;
   A.dodge();
   burst(p.x, p.y - 8, 6, '#cfd8dc', 1.4);
@@ -4589,7 +4778,7 @@ function checkPerfect(p, how) {
   t.forEach(e => { if (e.t.boss) bossPip(e, 'DODGE'); });
   witchT = Math.round((absurd('bullet') ? 300 : 100) * (1 + perk('witchK')));
   p.iframes = Math.max(p.iframes, 24);
-  say(p.x, p.y - 70, 'PERFECT DODGE', '#9fd0ff', true);
+  say(p.x, p.y - 70, 'PERFECT DODGE', '#9fd0ff', true); startZen(p);
   ring(p.x, p.y - 20, '#9fd0ff', 6, 70); flashScreen = 5;
   A.tone(1400, 300, 0.4, 'sine', 0.16); A.tone(700, 150, 0.4, 'triangle', 0.1, 0.05);
   styleAdd('perfect', 25);
@@ -5978,6 +6167,7 @@ function stepParts() {
   parts = parts.filter(p => p.life > 0);
   floats.forEach(f => { f.y += f.vy; f.life--; });
   floats = floats.filter(f => f.life > 0);
+  stepBarks();
 }
 
 /* ============================== RENDER ============================== */
@@ -7710,24 +7900,31 @@ function drawSelect() {
     ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
     // portrait at double size; the chosen one runs through his moves
     const reel = SHOWREEL[k], fr = sel ? reel[Math.floor(stateT / 6) % reel.length] : 'idle' + ((stateT / 20 | 0) % 2);
-    ctx.save(); ctx.translate(r.x + r.w / 2 - 6, r.y + 104); ctx.scale(2, 2);
+    ctx.save(); ctx.translate(r.x + r.w / 2 - 6, r.y + 94); ctx.scale(2, 2);
     drawCharFrame(c.sheet, fr, 0, 0, 1, null, 0, null);
     ctx.restore();
     ctx.font = 'bold 9px monospace'; ctx.fillStyle = sel ? c.col : '#b8aed0';
-    ctx.fillText(c.name, r.x + r.w / 2, r.y + 120);
+    ctx.fillText(c.name, r.x + r.w / 2, r.y + 108);
     // stat pips
-    let yy = r.y + 134;
+    let yy = r.y + 120;
     ctx.font = 'bold 6px monospace';
     Object.entries(c.bars).forEach(([lab, v]) => {
       ctx.textAlign = 'left'; ctx.fillStyle = '#6b6388'; ctx.fillText(lab, r.x + 12, yy);
       for (let q = 0; q < 4; q++) { ctx.fillStyle = q < v ? c.col : '#3a3150'; ctx.fillRect(r.x + 60 + q * 17, yy - 5, 14, 5); }
-      yy += 9;
+      yy += 8;
     });
     ctx.textAlign = 'center'; ctx.font = '7px monospace'; ctx.fillStyle = '#b8aed0';
-    c.blurb.forEach((l, q) => ctx.fillText(l, r.x + r.w / 2, yy + 4 + q * 9));
-    yy += 34;
+    c.blurb.forEach((l, q) => ctx.fillText(l, r.x + r.w / 2, yy + 4 + q * 8));
+    yy += 28;
     ctx.font = 'bold 6px monospace'; ctx.fillStyle = sel ? '#fff' : '#6b6388';
-    c.sig.forEach((l, q) => ctx.fillText(l, r.x + r.w / 2, yy + q * 8));
+    c.sig.forEach((l, q) => ctx.fillText(l, r.x + r.w / 2, yy + q * 7));
+    if (c.trait) {                                       // what only this one can do
+      yy += 21;
+      ctx.fillStyle = sel ? c.col : '#4a4266'; ctx.fillRect(r.x + 10, yy - 8, r.w - 20, 1);
+      ctx.font = 'bold 7px monospace'; ctx.fillStyle = sel ? c.col : '#8a80a8'; ctx.fillText(c.trait[0], r.x + r.w / 2, yy + 1);
+      ctx.font = '6px monospace'; ctx.fillStyle = sel ? '#e0d8f0' : '#6b6388';
+      ctx.fillText(c.trait[1], r.x + r.w / 2, yy + 8); ctx.fillText(c.trait[2], r.x + r.w / 2, yy + 15);
+    }
   });
   if ((stateT / 26 | 0) % 2 === 0) {
     ctx.font = 'bold 8px monospace'; ctx.fillStyle = '#fff';
@@ -8143,6 +8340,7 @@ function render() {
   });
   ctx.globalAlpha = 1;
 
+  drawBarks();
   floats.forEach(f => {
     ctx.globalAlpha = clamp(f.life / 20, 0, 1);
     ctx.font = 'bold ' + (f.big ? 13 : 10) + 'px monospace'; ctx.textAlign = 'center';
@@ -8410,7 +8608,7 @@ function drawHUD() {
   bar(10, 40, 96, 4, inFury ? p.furyT / 540 : p.fury / 100, inFury ? (stateT % 8 < 4 ? '#ff3b3b' : '#ffd23f') : '#ff6b35');
   ctx.font = 'bold 5px monospace'; ctx.textAlign = 'left'; ctx.fillStyle = inFury ? '#ff3b3b' : '#a0502a';
   ctx.fillText(inFury ? 'FURY!' : 'FURY', 110, 44);
-  drawXPBar();
+  drawXPBar(); drawClassTrait();
   ctx.font = 'bold 5px monospace'; ctx.textAlign = 'left';
   ctx.fillStyle = full ? '#ffd23f' : '#777';
   ctx.fillText(!has('whistle') ? 'WHISTLE (locked)' : full ? 'WHISTLE READY [' + btn('u') + ']' : 'WHISTLE', 110, 36);
@@ -8685,7 +8883,7 @@ function boot() {
     parryTest: big => { const e = enemies.find(e => !e.dead && !e.t.boss && !e.crowd); if (!e) return null; const p = player;
       p.setState('block'); p.blocking = true; p.blockT = 1; p.iframes = 0; p.airY = 0;
       const g = p.god; p.god = false; p.hp = p.maxhp; const r = hitPlayer(e, big ? { kind: 'white', dmg: 14, name: 'test' } : { kind: 'white', dmg: 7, name: 'test' }); p.god = g; return { r, st: e.st }; },
-    grant: (...ids) => ids.forEach(id => learnNode(id)),
+    grant: (...ids) => ids.forEach(id => { if (ITEMS[id]) { gear[ITEMS[id].slot] = id; buildSkin(); } else learnNode(id); }),   // an item or a skill
     xpAdd: n => gainXP(n),
     ngplus: v => { ngPlus = !!v; if (v) saveJSON('lastclass.ngplus', 1); },
     raid: () => raid ? { t: raid.t, heli: raid.heli, police: enemies.filter(e => e.t.police && !e.dead).map(e => e.type + (e.leaving ? ':leaving' : '')), done: raidDone } : { none: true, done: raidDone },
@@ -8716,6 +8914,9 @@ function boot() {
     ev: () => worldEv && { need: worldEv.need, phase: worldEv.phase, ko: worldEv.ko, total: worldEv.total, through: worldEv.through, wave: worldEv.wave },
     only: type => { flowOff = true; enemies.length = 0; spawnQ.length = 0; spawnEnemy(type); },
     spawn: type => spawnEnemy(type),
+    trait: () => ({ zen: player.zenT, cad: player.cad, peace: player.peaceT, hp: player.hp, max: player.maxhp, barks: enemies.filter(e => e.bark).map(e => e.type + ': ' + e.bark.txt) }),
+    hitFoe: n => { const e = enemies.find(e => !e.dead && !e.crowd); for (let i = 0; i < n; i++) addCombo(); return !!e; },
+    barkNow: (kind) => { barkCool = 0; const e = enemies.find(e => !e.dead && !e.crowd); if (e) bark(e, kind || 'in', 1); return e && e.bark && e.bark.txt; },
     dumpStuck: () => ({ p: [Math.round(player.x), Math.round(player.y), player.st], foes: enemies.filter(e => !e.dead).map(e => ({ t: e.type, x: Math.round(e.x), y: Math.round(e.y), st: e.st, tok: e.hasToken, cool: e.cool, q: e.queue, slot: e.slot, f: e.f })),
                          props: props.filter(o => !o.gone && o.solid).map(o => o.type + '@' + Math.round(o.x) + ',' + Math.round(o.y)), spawnQ: spawnQ.slice(), tokens: attackToken }),
 
