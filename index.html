@@ -2325,9 +2325,9 @@ const CLASSES = {
   yoga: {
     name: 'YOGA INSTRUCTOR', sheet: 'inst_yoga', col: '#ce93d8',
     hp: 90, speed: 1.1, runK: 1.05, dmg: 0.95, stamRegen: 1.35, parry: 15, dodgeIF: 20, dodgeStam: 13,
-    blurb: ['long kicks, easy parries.', 'heals when left in peace.', 'breaks easily.'],
+    blurb: ['long kicks, easy parries.', 'fragile, heals in peace.'],
     bars: { HEALTH: 2, POWER: 2, SPEED: 3, STAMINA: 4 },
-    trait: ['ZEN', 'perfect parry or dodge:', '+50% damage, free attacks'],
+    trait: ['ZEN', 'perfect parry/dodge: +50%'],
     sig: ['HIGH KICK', 'SPINNING BACK KICK', 'WARRIOR PALMS  (heavy)'],
     moves: { l2: { reach: 50, dmg: 9, sever: 'head' },
              l3: { reach: 48, dmg: 14, wide: true, knockdown: true, sever: 'leg' },
@@ -2340,9 +2340,9 @@ const CLASSES = {
     name: 'BODYBUILDER', sheet: 'inst_bb', col: '#e53935',
     hp: 125, speed: 0.86, runK: 0.92, dmg: 1.12, stamRegen: 0.78, parry: 8, armor: true, throwK: 1.5,
     dodgeIF: 12, dodgeStam: 26, dodgeV: 0.8, stamK: 1.25,
-    blurb: ['hits like a truck, throws far.', 'gasses out fast.', 'clumsy dodge, tiny parry window.'],
+    blurb: ['hits like a truck.', 'slow, gasses out fast.'],
     bars: { HEALTH: 4, POWER: 4, SPEED: 1, STAMINA: 1 },
-    trait: ['IRON', 'a heavy swing can\'t be', 'stopped once it starts'],
+    trait: ['IRON', 'heavy swings can\'t be stopped'],
     sig: ['BODY HOOK', 'AXE-HANDLE SMASH', 'HAYMAKER  (unstoppable)'],
     moves: { l2: { dmg: 10, reach: 38 },
              l3: { dmg: 17, reach: 42, wind: 8, knockdown: true, sever: 'head' } },
@@ -2352,9 +2352,9 @@ const CLASSES = {
   cyc: {
     name: 'SPIN INSTRUCTOR', sheet: 'inst_cyc', col: '#1e88e5',
     hp: 95, speed: 1.0, runK: 1.3, dmg: 0.86, stamRegen: 1.1, parry: 9, dodgeIF: 15, dodgeStam: 16,
-    blurb: ['weak start, strong finish.', 'fastest sprint, big dash attack.', 'get hit and the rhythm is gone.'],
+    blurb: ['weak start, strong finish.', 'fastest sprint in the gym.'],
     bars: { HEALTH: 3, POWER: 1, SPEED: 4, STAMINA: 3 },
-    trait: ['CADENCE', 'every clean hit: faster and', 'harder, up to +60%'],
+    trait: ['CADENCE', 'every hit: harder + faster'],
     sig: ['CLINCH KNEE', 'FRONT KICK', 'FLYING KNEE  (heavy, travels)'],
     moves: { l2: { dmg: 8, reach: 32, sever: 'arm' },
              l3: { dmg: 14, reach: 46, knockdown: true, sever: 'leg' },
@@ -7930,7 +7930,7 @@ const SHOWREEL = {
 function drawSelect() {
   ctx.fillStyle = '#14101f'; ctx.fillRect(0, 0, LW, LH);
   ctx.textAlign = 'center';
-  ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#ffd23f';
+  ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#ffd23f';
   ctx.fillText('WHO IS TEACHING TODAY?', LW / 2, 22);
   CLASS_KEYS.forEach((k, i) => {
     const c = CLASSES[k], r = cardRect(i), sel = i === selIdx;
@@ -7942,31 +7942,28 @@ function drawSelect() {
     ctx.save(); ctx.translate(r.x + r.w / 2 - 6, r.y + 94); ctx.scale(2, 2);
     drawCharFrame(c.sheet, fr, 0, 0, 1, null, 0, null);
     ctx.restore();
-    ctx.font = 'bold 9px monospace'; ctx.fillStyle = sel ? c.col : '#b8aed0';
-    ctx.fillText(c.name, r.x + r.w / 2, r.y + 108);
-    // stat pips
-    let yy = r.y + 120;
-    ctx.font = 'bold 6px monospace';
+    ctx.font = 'bold 10px monospace'; ctx.fillStyle = sel ? c.col : '#b8aed0';
+    ctx.fillText(c.name, r.x + r.w / 2, r.y + 109);
+    // stat bars: big enough to read on a phone
+    let yy = r.y + 122;
+    ctx.font = 'bold 7px monospace';
     Object.entries(c.bars).forEach(([lab, v]) => {
-      ctx.textAlign = 'left'; ctx.fillStyle = '#6b6388'; ctx.fillText(lab, r.x + 12, yy);
-      for (let q = 0; q < 4; q++) { ctx.fillStyle = q < v ? c.col : '#3a3150'; ctx.fillRect(r.x + 60 + q * 17, yy - 5, 14, 5); }
-      yy += 8;
+      ctx.textAlign = 'left'; ctx.fillStyle = sel ? '#b8aed0' : '#6b6388'; ctx.fillText(lab, r.x + 12, yy);
+      for (let q = 0; q < 4; q++) { ctx.fillStyle = q < v ? c.col : '#3a3150'; ctx.fillRect(r.x + 62 + q * 17, yy - 6, 14, 6); }
+      yy += 10;
     });
-    ctx.textAlign = 'center'; ctx.font = '7px monospace'; ctx.fillStyle = '#b8aed0';
-    c.blurb.forEach((l, q) => ctx.fillText(l, r.x + r.w / 2, yy + 4 + q * 8));
-    yy += 28;
-    ctx.font = 'bold 6px monospace'; ctx.fillStyle = sel ? '#fff' : '#6b6388';
-    c.sig.forEach((l, q) => ctx.fillText(l, r.x + r.w / 2, yy + q * 7));
+    ctx.textAlign = 'center'; ctx.font = '8px monospace'; ctx.fillStyle = sel ? '#e0d8f0' : '#8a80a8';
+    c.blurb.forEach((l, q) => ctx.fillText(l, r.x + r.w / 2, yy + 3 + q * 10));
     if (c.trait) {                                       // what only this one can do
-      yy += 21;
-      ctx.fillStyle = sel ? c.col : '#4a4266'; ctx.fillRect(r.x + 10, yy - 8, r.w - 20, 1);
-      ctx.font = 'bold 7px monospace'; ctx.fillStyle = sel ? c.col : '#8a80a8'; ctx.fillText(c.trait[0], r.x + r.w / 2, yy + 1);
-      ctx.font = '6px monospace'; ctx.fillStyle = sel ? '#e0d8f0' : '#6b6388';
-      ctx.fillText(c.trait[1], r.x + r.w / 2, yy + 8); ctx.fillText(c.trait[2], r.x + r.w / 2, yy + 15);
+      yy += 3 + c.blurb.length * 10 + 6;
+      ctx.fillStyle = sel ? c.col : '#3a3150'; ctx.fillRect(r.x + 12, yy - 8, r.w - 24, 1);
+      ctx.font = 'bold 9px monospace'; ctx.fillStyle = sel ? c.col : '#8a80a8'; ctx.fillText(c.trait[0], r.x + r.w / 2, yy + 3);
+      ctx.font = '7px monospace'; ctx.fillStyle = sel ? '#fff' : '#6b6388';
+      ctx.fillText(c.trait[1], r.x + r.w / 2, yy + 14);
     }
   });
   if ((stateT / 26 | 0) % 2 === 0) {
-    ctx.font = 'bold 8px monospace'; ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px monospace'; ctx.fillStyle = '#fff';
     ctx.fillText(isTouch() ? 'TAP A CARD, TAP AGAIN TO START' : '<  A / D  >     SPACE TO START', LW / 2, LH - 7);
   }
   ctx.textAlign = 'left';
@@ -8846,8 +8843,13 @@ function fit() {
   s = Math.max(0.15, s);
   cv.style.width = Math.floor(LW * s) + 'px';
   cv.style.height = Math.floor(LH * s) + 'px';
+  /* draw at the screen's real resolution: the game still thinks in 480x270, but text and thin
+     lines come out sharp instead of stretched. Capped at 3x to keep phones fast. */
+  const k = Math.max(1, Math.min(3, Math.ceil(s * (window.devicePixelRatio || 1) - 0.15)));
+  if (k !== RES) { RES = k; cv.width = LW * k; cv.height = LH * k; }
   layoutTouch();
 }
+let RES = 1;
 
 function boot() {
   cv.width = LW; cv.height = LH;
@@ -8884,6 +8886,7 @@ function boot() {
   (function loop(now) {
     acc += Math.min(now - last, 100); last = now;
     while (acc >= STEP) { pollPad(); if (!frozen) update(); acc -= STEP; }
+    ctx.setTransform(RES, 0, 0, RES, 0, 0);
     ctx.clearRect(0, 0, LW, LH);
     ctx.imageSmoothingEnabled = false;
     render(); syncControls();
