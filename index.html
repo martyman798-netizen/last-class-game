@@ -587,6 +587,7 @@ cv.addEventListener('pointerdown', e => {
   else if (state === 'intro') introTap(x, y);
   else if (state === 'levelup') levelUpTap(x, y);
   else if (state === 'scene' && x >= SKIP_BTN.x - 6 && y <= SKIP_BTN.y + SKIP_BTN.h + 8) sceneSkipReq = true;
+  else if (['scene', 'over', 'win', 'stage', 'clear', 'credits'].includes(state)) tapGo = true;
   else if (state === 'play' && pendingPicks > 0 && x > LVL_BADGE.x - 10 && x < LVL_BADGE.x + LVL_BADGE.w + 10 && y > LVL_BADGE.y - 10 && y < LVL_BADGE.y + LVL_BADGE.h + 10) treeReq = true;
 });
 function clearEdges() { T.lightEdge = T.heavyEdge = T.dodgeEdge = T.whistleEdge = T.jumpEdge = T.blockEdge = false; T.chargeRelease = false; }
@@ -2694,7 +2695,7 @@ const ITEMS = {
               desc: 'perfect-dodge slow motion lasts 60% longer' },
   headph:   { slot: 'GEAR',  name: 'HEADPHONES',       rar: 2, col: '#ff4fa3', ico: 'phones', up: 'cutter', fx: { cutK: 0.5, furyK: 0.2 },
               desc: 'the cutter hits 50% harder' },
-  goldwh:   { slot: 'GEAR',  name: 'GOLDEN WHISTLE',   rar: 2, col: '#ffd23f', up: 'whistle',  fx: { superK: 0.6 },
+  goldwh:   { slot: 'GEAR',  name: 'GOLDEN WHISTLE',   rar: 2, col: '#ffd23f', up: 'finisher',  fx: { superK: 0.6 },
               desc: 'the finisher bar fills 60% faster' },
   strap:    { slot: 'GEAR',  name: 'YOGA STRAP',       rar: 2, col: '#ce93d8', up: 'charge',   fx: { crane: 1, charge: 0.5 },
               desc: 'charges faster; a full charge launches them' },
@@ -3586,6 +3587,8 @@ function drawTicker() {
   if (a <= 0) return;
   ctx.globalAlpha = a;
   ctx.textAlign = 'center';
+  const ty = banner && banner.t > 0 ? 152 - 66 : 0;         // a room title is up: sit under it
+  ctx.save(); ctx.translate(0, ty);
   ctx.fillStyle = 'rgba(0,0,0,.62)'; ctx.fillRect(LW / 2 - 118, 66, 236, 27);
   const gc = { S: '#ffd23f', A: '#8bc34a', B: '#4fc3f7', C: '#b8aed0', D: '#ff5252' }[k.g];
   ctx.fillStyle = gc; ctx.fillRect(LW / 2 - 118, 66, 236, 2);
@@ -3593,6 +3596,7 @@ function drawTicker() {
   ctx.fillText((endlessMode ? 'ENDLESS  ' + r.name : 'WAVE ' + (round + 1) + '/' + ROUNDS.length + '  ' + r.name) + (bossRound(round) ? '  - BOSS' : ''), LW / 2, 78);
   ctx.font = 'bold 7px monospace'; ctx.fillStyle = gc;
   ctx.fillText('last wave ' + k.g + (k.bonus ? '  +' + k.bonus : '') + (k.heal ? '   +' + k.heal + ' hp' : '') + (k.prize ? '   GEAR DROPPED' : '') + '   -   ' + r.sub, LW / 2, 88);
+  ctx.restore();
   ctx.globalAlpha = 1; ctx.textAlign = 'left';
 }
 
@@ -3772,7 +3776,7 @@ function pauseChoose(i) {
   else if (it === 'QUIT TO TITLE') { togglePause(); if (!tutorial) saveBest(); endlessMode = false; tutorial = null; flowOff = false; state = 'title'; stateT = 0; M.play('title'); titleSel = 0;
     player = makePlayer(); enemies = []; shots = []; pickups = []; clearBlood(); layoutProps(); }
 }
-const pauseRow = i => ({ x: LW / 2 - 70, y: 92 + i * 20, w: 140, h: 16 });
+const pauseRow = i => ({ x: LW / 2 - 70, y: 76 + i * 18, w: 140, h: 15 });
 function pauseTap(x, y) {
   for (let i = 0; i < PAUSE_ITEMS.length; i++) {
     const r = pauseRow(i);
@@ -6024,13 +6028,14 @@ let tutorial = null;
 function act(a) {                                       // what to press, on whatever you're holding
   const pad = GP.active, touch = isTouch() && !pad;
   const L = {
-    move:  ['WASD / arrows', 'the stick', 'the left stick'],
-    light: ['J', 'X', 'swipe left/right on the pad'],
-    heavy: ['K', 'Y', 'tap the pad'],
-    jump:  ['SPACE', 'A', 'swipe up'],
+    move:  ['WASD / arrows', 'the left stick', 'your left thumb, anywhere on the left'],
+    light: ['J', 'X', 'a quick swipe left/right with your right thumb'],
+    heavy: ['K', 'Y', 'a tap with your right thumb'],
+    jump:  ['SPACE', 'A', 'swipe up with your right thumb'],
     block: ['H (or SHIFT)', 'RB', 'the BLOCK button'],
-    grab:  ['L', 'B', 'swipe down'],
-    dodge: ['hold H + tap a direction', 'hold RB + flick the stick', 'hold BLOCK + flick the stick']
+    grab:  ['L', 'B', 'swipe down with your right thumb'],
+    dodge: ['hold H + tap a direction', 'hold RB + flick the stick', 'hold BLOCK + move your left thumb'],
+    finish: ['U', 'LB', 'the FINISH button']
   }[a];
   return touch ? L[2] : pad ? L[1] : L[0];
 }
@@ -6082,9 +6087,9 @@ const TUT = [
     tick: () => { const r = propOf('rig');                 // fell off without it? back up you go
       if (player.baseZ === 0 && player.airY === 0 && ++tutorial.ground > 70 && r) { tutorial.ground = 0; player.x = r.x; player.y = r.y; player.baseZ = r.h; player.under = r; say(player.x, player.y - 80, 'TRY AGAIN', '#ffd23f'); } },
     check: () => tutHas('cutterhit') },
-  { say: 'FINISH IT', hint: () => 'it is dazed. ' + act('heavy') + ' next to it - by the treadmill, you use the treadmill',
+  { say: 'FINISH IT', hint: () => 'it is dazed and your gold bar is full: ' + act('finish') + ' - by the treadmill, you use the treadmill',
     setup: () => { const t = propOf('tread'); const e = tutFoe() || tutDummy(300, 225); if (t) { e.x = t.x - t.w - 12; e.y = t.y + 10; player.x = e.x - 40; player.y = e.y; player.baseZ = 0; } e.hp = e.maxhp = 60; },
-    tick: () => { const e = tutFoe(); if (e && !e.finLock && e.st !== 'stagger') e.setState('stagger', 600); },
+    tick: () => { const e = tutFoe(); if (e && !e.finLock && e.st !== 'stagger') e.setState('stagger', 600); player.super = Math.max(player.super, player.maxsuper); },
     check: () => tutHas('finisher') }
 ];
 function startTutorial() {
@@ -6282,7 +6287,7 @@ function drawMenu() {
   ctx.textAlign = 'center'; ctx.font = '7px monospace'; ctx.fillStyle = '#6b6388';
   const it = SET_ITEMS[menu.sel];
   ctx.fillText(it === 'DIFFICULTY' ? DIFF().note : it === 'FLASHES' ? 'tones down the white flashes on big hits' : it === 'STORY SCENES' ? 'off: no cut-scenes, straight to the fighting' : it === 'PAD POSITION' ? 'floating: touch anywhere on a side and the stick appears there' : it === 'PAD SIZE' ? 'phone: how big the stick and buttons are' : it === 'SKILL TREE' ? 'after a level up: open the tree once the room is clear, or only when you ask' : isTouch() ? 'tap a row - left half lowers, right half raises' :
-               GP.active ? 'up/down choose   left/right change   A select   B back' : 'arrows choose   left/right change   enter select   esc back', LW / 2, 246);
+               GP.active ? 'up/down choose   left/right change   A select   B back' : 'arrows choose   left/right change   enter select   esc back', LW / 2, LH - 7);
   ctx.textAlign = 'left';
 }
 function drawControls() {
@@ -6306,8 +6311,10 @@ function drawControls() {
     .forEach((t, i) => ctx.fillText(t, LW / 2, 186 + i * 11));
   ctx.font = '7px monospace'; ctx.fillStyle = '#6b6388'; ctx.fillText('any button to go back', LW / 2, 236);
 }
+let tapGo = false;                                      // a tap on the screen, for "tap to go on" moments
 function startPressed() {
-  return tapped('space') || tapped('enter') || tapped('j') || tapped('k') || T.lightEdge || T.light;
+  const t = tapGo; tapGo = false;
+  return t || tapped('space') || tapped('enter') || tapped('j') || tapped('k') || T.lightEdge || T.light;
 }
 
 function stepShots() {
@@ -7770,14 +7777,16 @@ function drawSceneWorld() {
   sc.cast.forEach(c => {
     if (c.hidden) return;
     const spr = c.spr || (TYPES[c.type] && TYPES[c.type].spr);
-    let fr;
+    let fr; trackSteps(c);                               // scene walkers step with planted feet too
     if (c.hurt > 0) fr = 'hurt';
-    else if (c.walking) fr = spr === 'wife' ? 'walk' + ((t >> 3) % 4) : 'walk' + ((t >> 2) % 4);
+    else if (c.walking && FS[spr] && FS[spr].f.walk0) fr = gaitFrame(c, spr, ['walk0', 'walk1', 'walk2', 'walk3']);
+    else if (c.walking) fr = 'walk' + ((t >> 2) % 4);
     else { const base = c.frame || 'idle'; fr = /\d$/.test(base) ? base : base + ((t >> 5) % 2); }
     const y = c.y - (c.hop > 0 ? Math.sin((14 - c.hop) / 14 * Math.PI) * 8 : 0);
-    if (!drawCharFrame(spr, fr, c.x, y, c.face, null, 0, null) && !drawCharFrame(spr, 'idle0', c.x, y, c.face, null, 0, null) && SPR[spr]) drawRaw(SPR[spr], c.x, y, c.face, 1, 1, null);
+    const gx = c.x + (c.walking ? (c.gaitOff || 0) : 0);
+    if (!drawCharFrame(spr, fr, gx, y, c.face, null, 0, null) && !drawCharFrame(spr, 'idle0', c.x, y, c.face, null, 0, null) && SPR[spr]) drawRaw(SPR[spr], c.x, y, c.face, 1, 1, null);
   });
-  if (player.walking) player.pose = 'walk' + ((t >> 2) % 4);
+  if (player.walking) { trackSteps(player); player.pose = gaitFrame(player, C().sheet, WALK6); }
   else if (player.pose && /^walk/.test(player.pose)) player.pose = null;
   // emotes over heads
   const head = id => { const a = actorOf(id); if (!a || a.hidden) return null; const tall = id === 'you' ? 48 : (a.type === 'bulker' ? 58 : a.type === 'blonde' || a.type === 'cashier' ? 50 : a.spr === 'yoga' ? 52 : 42); return [a.x + 4 * (a.face || 1), a.y - tall]; };
@@ -8753,7 +8762,7 @@ function drawClear() {
 function drawPause() {
   ctx.fillStyle = 'rgba(12,9,22,.93)'; ctx.fillRect(0, 0, LW, LH);
   ctx.textAlign = 'center';
-  ctx.font = 'bold 20px monospace'; ctx.fillStyle = '#ffd23f'; ctx.fillText('PAUSED', LW / 2, 66);
+  ctx.font = 'bold 20px monospace'; ctx.fillStyle = '#ffd23f'; ctx.fillText('PAUSED', LW / 2, 58);
   ctx.font = 'bold 9px monospace';
   PAUSE_ITEMS.forEach((it, i) => {
     const r = pauseRow(i), sel = i === pauseSel;
@@ -8764,17 +8773,17 @@ function drawPause() {
   });
   ctx.font = 'bold 7px monospace';
   const worn = SLOTS.map(sl => gear[sl] ? ITEMS[gear[sl]].name : '-').join('   ');
-  ctx.fillStyle = '#ff9800'; ctx.fillText('WEARING:  ' + worn, LW / 2, 192);
+  ctx.fillStyle = '#ff9800'; ctx.fillText('WEARING:  ' + worn, LW / 2, 200);
   ctx.font = '7px monospace'; ctx.fillStyle = '#6b6388';
   if (GP.active) {
-    ctx.fillText('stick move  X light  Y heavy  A jump  RB block  B grab  LB finisher', LW / 2, 204);
-    ctx.fillText('X,X,Y launches  -  block right before a hit = parry  -  RB + stick = dodge', LW / 2, 215);
+    ctx.fillText('stick move  X light  Y heavy  A jump  RB block  B grab  LB finisher', LW / 2, 220);
+    ctx.fillText('X,X,Y launches  -  block right before a hit = parry  -  RB + stick = dodge', LW / 2, 231);
   } else if (document.body.classList.contains('touch')) {
-    ctx.fillText('RIGHT PAD: swipe <- -> hit   swipe up jump   swipe down grab/throw', LW / 2, 204);
-    ctx.fillText('tap = heavy   hold still = charge heavy   swipe, swipe, tap = launcher', LW / 2, 215);
+    ctx.fillText('LEFT THUMB anywhere: move     RIGHT THUMB: swipe = hit, up = jump, down = grab', LW / 2, 220);
+    ctx.fillText('tap = heavy   hold = charge   swipe, swipe, tap = launcher   FINISH = finisher', LW / 2, 231);
   } else {
-    ctx.fillText('MOVE wasd  LIGHT j  HEAVY k  JUMP space  BLOCK h  GRAB l  FINISHER u', LW / 2, 204);
-    ctx.fillText('j,j,k launches  -  block right before a hit = parry  -  red = jump it', LW / 2, 215);
+    ctx.fillText('MOVE wasd  LIGHT j  HEAVY k  JUMP space  BLOCK h  GRAB l  FINISHER u', LW / 2, 220);
+    ctx.fillText('j,j,k launches  -  block right before a hit = parry  -  red = jump it', LW / 2, 231);
   }
   ctx.textAlign = 'left';
 }
@@ -8802,6 +8811,9 @@ function drawChargeBar() {
 }
 
 function drawHUD() {
+  { const g = ctx.createLinearGradient(0, 0, 0, 52);
+    g.addColorStop(0, 'rgba(10,8,20,.62)'); g.addColorStop(0.7, 'rgba(10,8,20,.35)'); g.addColorStop(1, 'rgba(10,8,20,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, LW, 52); }
   if (blindT > 0) {                                  // looked into the flash: everything goes white, then comes back
     blindT--;
     ctx.fillStyle = 'rgba(255,255,240,' + Math.min(0.92, blindT / 70) * (SET.flash ? 1 : 0.55) + ')'; ctx.fillRect(0, 0, LW, LH);
@@ -8891,7 +8903,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611251826', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611252131', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -8985,7 +8997,7 @@ function drawEnd(title, sub, col) {
   else ctx.fillText(newBest ? 'NEW PERSONAL BEST!' : 'best ' + best, LW / 2, 60);
   if (stateT > 70 && Math.floor(stateT / 26) % 2 === 0) {
     ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#fff';
-    ctx.fillText(isTouch() && !GP.active ? 'TAP THE PAD TO REBOOK' : 'PRESS ' + btn(' ') + ' TO REBOOK', LW / 2, 192);
+    ctx.fillText(isTouch() && !GP.active ? 'TAP TO REBOOK' : 'PRESS ' + btn(' ') + ' TO REBOOK', LW / 2, 192);
   }
   ctx.textAlign = 'left';
 }
