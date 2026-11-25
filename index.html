@@ -514,6 +514,7 @@ cv.addEventListener('pointerdown', e => {
   const x = (e.clientX - r.left) / r.width * LW, y = (e.clientY - r.top) / r.height * LH;
   if (menu) menuTap(x, y);
   else if (paused) pauseTap(x, y);
+  else if (state === 'title' && newerBuild && x > UPDATE_BOX.x && y > UPDATE_BOX.y && y < UPDATE_BOX.y + UPDATE_BOX.h) location.reload();
   else if (state === 'title') titleTap(x, y);
   else if (state === 'select') selectTap(x, y);
   else if (state === 'loot') lootTap(x, y);
@@ -8785,7 +8786,23 @@ function slotLine(cp) {
   const when = (Date.now() - (cp.at || 0) < 864e5 ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString());
   return [(c ? c.name : '?') + '   LV ' + (cp.lvl || 1) + (cp.ng ? '  NG+' : ''), 'wave ' + (cp.round + 1) + (r.name ? ' - ' + r.name.toLowerCase() : '') + '   ' + when];
 }
+/* which version is this? release_live stamps the number in; the title shows it, and asks the
+   public site whether there's a newer one (the app only updates when it fully starts) */
+const BUILD = '202611251719', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+let newerBuild = null, buildAsked = 0;
+function askForNewerBuild() {
+  if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
+  buildAsked = Date.now();
+  try {
+    fetch(LIVE_URL + 'version.txt?t=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
+      t = (t || '').trim(); if (/^\d{12}$/.test(t) && t > BUILD) newerBuild = t;
+    }).catch(() => {});
+  } catch (e) { /* offline or blocked: nothing to say */ }
+}
+const buildLabel = b => /^\d{12}$/.test(b) ? 'v ' + b.slice(6, 8) + '.' + b.slice(4, 6) + ' ' + b.slice(8, 10) + ':' + b.slice(10) : 'dev';
+const UPDATE_BOX = { x: LW - 186, y: LH - 44, w: 176, h: 30 };
 function drawTitle() {
+  askForNewerBuild();
   if (TITLE_BG.ok) { ctx.drawImage(TITLE_BG, 0, 0, LW, LH); }
   else {
     ctx.fillStyle = 'rgba(20,16,34,.55)'; ctx.fillRect(0, 0, LW, LH);
@@ -8835,7 +8852,16 @@ function drawTitle() {
   ctx.fillText(isTouch() && !GP.active ? 'tap to choose' : titlePage ? 'up/down choose   enter select   esc back' : 'up/down choose   enter select', 34, LH - 10);
   ctx.font = 'bold 7px monospace'; ctx.fillStyle = '#ffd23f'; ctx.textAlign = 'right';
   if (best > 0 && !titlePage) ctx.fillText('BEST ' + String(best).padStart(6, '0'), LW - 12, 16);
+  ctx.font = '6px monospace'; ctx.fillStyle = '#6b6388'; ctx.fillText(buildLabel(BUILD), LW - 8, LH - 6);
   ctx.textAlign = 'left';
+  if (newerBuild) {                                     // there's a newer game out there
+    const b = UPDATE_BOX, on = (stateT >> 4) % 2;
+    ctx.fillStyle = on ? '#8bc34a' : '#689f38'; ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = '#10200a'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('NEW VERSION READY!', b.x + b.w / 2, b.y + 11);
+    ctx.font = '6px monospace'; ctx.fillText('close the app fully and open it again', b.x + b.w / 2, b.y + 22);
+    ctx.textAlign = 'left';
+  }
 }
 
 function drawEnd(title, sub, col) {
