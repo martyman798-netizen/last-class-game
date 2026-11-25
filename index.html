@@ -114,6 +114,7 @@ const sgn = v => v < 0 ? -1 : 1;
 function loadJSON(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
 function saveJSON(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
 const SET = Object.assign({ music: 7, sfx: 8, gore: true, shake: true, flash: true, diff: 1 }, loadJSON('lastclass.settings') || {});
+if (SET.padV !== 2) { SET.padPos = 'float'; SET.padV = 2; saveJSON('lastclass.settings', SET); }   // floating controls arrived: everyone starts there once
 const saveSet = () => saveJSON('lastclass.settings', SET);
 const DIFFS = [
   { n: 'EASY',   hp: 0.75, dmg: 0.6,  tok: -1, note: 'they hit softer and there are fewer swinging at once' },
@@ -555,7 +556,7 @@ function floatTo(el, t, side) {                       // centre a pad under the 
   el.style.bottom = Math.round(innerHeight - t.clientY - P / 2) + 'px';
   if (side === 'left') { el.style.left = Math.round(t.clientX - P / 2) + 'px'; el.style.right = ''; }
   else { el.style.right = Math.round(innerWidth - t.clientX - P / 2) + 'px'; el.style.left = ''; }
-  el.classList.add('act');
+  el.classList.add('act'); el.style.opacity = '1';
 }
 function restTouch(el) { el.classList.remove('act'); if (TL.rest && TL.rest[el.id]) Object.assign(el.style, TL.rest[el.id]); }
 
@@ -8890,7 +8891,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611251821', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611251826', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -9017,7 +9018,7 @@ function layoutTouch() {
   const kn = px(P * 0.4);
   set('knob', { width: kn, height: kn }); set('aknob', { width: kn, height: kn });
   const B = Math.round(P * 0.47), Wh = Math.round(P * 0.36);
-  const op = TL.side ? '' : '0.6';
+  const op = (!SET.padPos || SET.padPos === 'float') ? '0.35' : TL.side ? '' : '0.6';
   if (TL.side) {
     const lc = Math.max(lb / 2, P / 2 + 16), rc = W - Math.max(rb / 2, P / 2 + 16);
     // MIDDLE: thumbs rest at mid height (a bit below centre), LOW: down by the corners
