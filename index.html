@@ -77,7 +77,6 @@
 <body>
 <div id="wrap"><canvas id="c" width="480" height="270"></canvas></div>
 <div id="pad">
-  <div id="zoneL"></div><div id="zoneR"></div>
   <div id="stick"><div id="knob"></div></div>
   <div id="apad"><span class="lab u">JUMP</span><span class="lab d">GRAB</span><span class="lab l">HIT</span><span class="lab r">HIT</span><div id="aknob"><span class="lab c">HOLD</span></div></div>
   <div class="btn" id="bBlock">BLOCK</div>
@@ -414,15 +413,6 @@ function setupTouch() {
   stick.addEventListener('touchstart', start, { passive: false });
   stick.addEventListener('touchmove', move, { passive: false });
   stick.addEventListener('touchend', end); stick.addEventListener('touchcancel', end);
-  /* FLOATING (Brawl Stars style): put a thumb down anywhere on the left half and the stick
-     appears under it; anywhere on the right half and the action pad does. Lift, and they go home. */
-  const zl = document.getElementById('zoneL');
-  if (zl) {
-    zl.addEventListener('touchstart', e => { if (id !== null || badgeTouch(e.changedTouches[0])) { e.preventDefault(); return; } floatTo(stick, e.changedTouches[0], 'left'); start(e); }, { passive: false });
-    zl.addEventListener('touchmove', move, { passive: false });
-    const zend = e => { end(e); if (id === null) restTouch(stick); };
-    zl.addEventListener('touchend', zend); zl.addEventListener('touchcancel', zend);
-  }
   function mv(t) {
     let dx = t.clientX - cx, dy = t.clientY - cy;
     const R = R0 * TL.k, d = Math.hypot(dx, dy) || 1, cl = Math.min(d, R);
@@ -442,13 +432,48 @@ function setupTouch() {
   };
   bind(document.getElementById('bBlock'), 'block');
   bind(document.getElementById('bWhistle'), 'whistle');
-  const ap = setupActionPad(), zr = document.getElementById('zoneR'), padEl = document.getElementById('apad');
-  if (ap && zr) {
-    zr.addEventListener('touchstart', e => { if (ap.busy() || badgeTouch(e.changedTouches[0])) { e.preventDefault(); return; } floatTo(padEl, e.changedTouches[0], 'right'); ap.start(e); }, { passive: false });
-    zr.addEventListener('touchmove', ap.move, { passive: false });
-    const zend = e => { ap.end(e); if (!ap.busy()) restTouch(padEl); };
-    zr.addEventListener('touchend', zend); zr.addEventListener('touchcancel', zend);
-  }
+  const ap = setupActionPad(), padEl = document.getElementById('apad');
+  /* FLOATING (Brawl Stars style): one listener for the whole screen. During a fight, a thumb
+     that lands anywhere on the left half becomes the stick, anywhere on the right half the
+     action pad - unless it lands on a button. Lift it and the pad goes home. */
+  const floating = () => !SET.padPos || SET.padPos === 'float';
+  const onBtn = t => { const el = document.elementFromPoint(t.clientX, t.clientY); return el && el.closest && el.closest('.btn, #bPause'); };
+  addEventListener('touchstart', e => {
+    if (!floating() || ctlShown !== 3) return;
+    let mine = false;
+    for (const t of e.changedTouches) {
+      if (onBtn(t)) continue;
+      if (badgeTouch(t)) { mine = true; continue; }
+      if (t.clientX < innerWidth / 2) {
+        if (id !== null) continue;
+        A.init(); A.resume(); floatTo(stick, t, 'left');
+        id = t.identifier; cx = t.clientX; cy = t.clientY; mv(t); mine = true;
+      } else {
+        if (ap.busy()) continue;
+        floatTo(padEl, t, 'right'); ap.startT(t); mine = true;
+      }
+    }
+    if (mine) { e.preventDefault(); e.stopPropagation(); }
+  }, { capture: true, passive: false });
+  addEventListener('touchmove', e => {
+    if (!floating()) return;
+    let mine = false;
+    for (const t of e.changedTouches) {
+      if (t.identifier === id) { mv(t); mine = true; }
+      else if (ap.owns(t)) { ap.moveT(t); mine = true; }
+    }
+    if (mine) { e.preventDefault(); e.stopPropagation(); }
+  }, { capture: true, passive: false });
+  const fend = e => {
+    if (!floating()) return;
+    let mine = false;
+    for (const t of e.changedTouches) {
+      if (t.identifier === id) { id = null; T.dx = 0; T.dy = 0; knob.style.transform = 'translate(-50%,-50%)'; restTouch(stick); mine = true; }
+      else if (ap.owns(t)) { ap.endT(t); restTouch(padEl); mine = true; }
+    }
+    if (mine) e.stopPropagation();
+  };
+  addEventListener('touchend', fend, { capture: true }); addEventListener('touchcancel', fend, { capture: true });
   const bp = document.getElementById('bPause');
   if (bp) {
     const tp = e => { e.preventDefault(); A.init(); A.resume(); togglePause(); };
@@ -484,28 +509,28 @@ function setupActionPad() {
     else { buf.l = BUF; flash('fd'); }                     // down: grab - in the air: a cutter if someone's below, else a slam
     fired = true; armed = false;
   };
-  const start = e => {
-    e.preventDefault(); A.init(); A.resume(); goLandscape();
-    const t = e.changedTouches[0]; id = t.identifier;
+  const start = e => { e.preventDefault(); startT(e.changedTouches[0]); };
+  const startT = t => {
+    A.init(); A.resume(); goLandscape();
+    id = t.identifier;
     const r = pad.getBoundingClientRect();
     cx = t.clientX; cy = t.clientY;                        // the gesture starts where the thumb lands
     pad.dataset.cx = r.left + r.width / 2;
     t0 = performance.now(); armed = true; fired = false;
     holdTimer = setTimeout(() => { if (!fired) { T.charging = true; pad.classList.add('charging'); } }, HOLD_MS);
   };
-  const move = e => {
-    e.preventDefault();
-    for (const t of e.changedTouches) {
-      if (t.identifier !== id) continue;
+  const move = e => { e.preventDefault(); for (const t of e.changedTouches) if (t.identifier === id) moveT(t); };
+  const moveT = t => {
+    {
       const dx = t.clientX - cx, dy = t.clientY - cy, d = Math.hypot(dx, dy);
       show(dx, dy);
       if (!armed && d < REARM_PX) { armed = true; t0 = performance.now(); }   // back to centre: ready again
       if (armed && d > FLICK_PX && (performance.now() - t0 < FLICK_MS || T.charging)) flick(dx, dy);
     }
   };
-  const end = e => {
-    for (const t of e.changedTouches) {
-      if (t.identifier !== id) continue;
+  const end = e => { for (const t of e.changedTouches) if (t.identifier === id) endT(t); };
+  const endT = t => {
+    {
       id = null;
       knob.style.transform = 'translate(-50%,-50%)';
       pad.classList.remove('charging');
@@ -517,7 +542,7 @@ function setupActionPad() {
   pad.addEventListener('touchstart', start, { passive: false });
   pad.addEventListener('touchmove', move, { passive: false });
   pad.addEventListener('touchend', end); pad.addEventListener('touchcancel', end);
-  return { start, move, end, busy: () => id !== null };
+  return { startT, moveT, endT, busy: () => id !== null, owns: t => t.identifier === id };
 }
 function badgeTouch(t) {                               // a thumb on the SKILL POINT badge opens the tree, not a stick
   if (!(state === 'play' && pendingPicks > 0)) return false;
@@ -4421,6 +4446,19 @@ function updatePlayer() {
   if (held('w') || held('arrowup')) iy -= 1;
   if (held('s') || held('arrowdown')) iy += 1;
   ix += T.dx + GP.dx; iy += T.dy + GP.dy;
+  if (p.autoFin) {                                      // FINISH pressed with nobody in reach: sprint to them
+    const a = p.autoFin, e = a.e;
+    if (++a.t > 150 || !finishable(e) || finCharges(p) < 1 || ['hurt', 'down', 'airborne', 'held', 'grabbed'].includes(p.st) || T.block || held('h') || held('shift')) p.autoFin = null;
+    else {
+      const dy = e.y - p.y;
+      if (Math.abs(e.x - p.x) < 44 && Math.abs(dy) < 16 && ['idle', 'walk', 'run'].includes(p.st)) {
+        p.autoFin = null; p.super -= finCharge(p); p.charge = 0; startFinisher(p, e); return;
+      }
+      const side = sgn(p.x - e.x) || -p.face, dx = e.x + side * 22 - p.x, d = Math.hypot(dx, dy) || 1;
+      ix = dx / d; iy = clamp(dy / d * 1.6, -1, 1);
+      if (Math.abs(ix) > 0.2) { p.runDir = sgn(ix); p.runT = Math.max(p.runT, 17); }
+    }
+  }
   const mag = Math.hypot(ix, iy);
   if (mag > 1) { ix /= mag; iy /= mag; }
 
@@ -4545,7 +4583,12 @@ function updatePlayer() {
     eat(['u']); T.whistleEdge = false;
     const fe = findFinishable(p);
     if (fe && finCharges(p) >= 1) { p.super -= finCharge(p); p.charge = 0; startFinisher(p, fe); return; }
-    if (lockT <= 0) { lockT = 50; say(p.x, p.y - 66, finCharges(p) < 1 ? 'FINISHER BAR NOT FULL' : 'STUN SOMEONE FIRST', '#9e9e9e'); }
+    if (finCharges(p) >= 1) {                           // someone further off? go and get them
+      let far = null, bd = 1e9;
+      enemies.forEach(e => { if (!finishable(e)) return; const d = Math.hypot(e.x - p.x, (e.y - p.y) * 2); if (d < 340 && d < bd) { bd = d; far = e; } });
+      if (far) { p.autoFin = { e: far, t: 0 }; ring(far.x, far.y - 24, '#ffd23f', 4, 40); say(far.x, far.y - far.h - 14, 'FINISH!', '#ffd23f'); A.tone(400, 800, 0.1, 'square', 0.08); }
+    }
+    if (!p.autoFin && lockT <= 0) { lockT = 50; say(p.x, p.y - 66, finCharges(p) < 1 ? 'FINISHER BAR NOT FULL' : 'STUN SOMEONE FIRST', '#9e9e9e'); }
   }
   if (!air && wantHeavy && !T.charging && finCharges(p) >= 1) {          // HEAVY next to someone reeling works too
     const fe = findFinishable(p);
@@ -8847,7 +8890,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611251806', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611251821', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -9156,6 +9199,7 @@ function boot() {
     spawn: type => spawnEnemy(type),
     fin: () => ({ super: Math.round(player.super), charges: finCharges(player), st: player.st, slow: slowMo, learned: [...learned] }),
     setSuper: v => { player.super = v; },
+    farFoe: dx => { const e = enemies.find(e => !e.dead && !e.crowd); if (e) { e.x = clamp(player.x + (player.x < (WALL_L + WALL_R) / 2 ? dx : -dx), WALL_L + 10, WALL_R - 10); e.y = player.y + 12; e.setState('stagger', 200); } },
     stunFoe: () => { const e = enemies.find(e => !e.dead && !e.crowd); if (e) { e.x = player.x + player.face * 22; e.y = player.y; e.setState('stagger', 120); } return !!e; },
     gait: () => ({ x: player.x, y: player.y, fr: playerFrame(player), off: player.gaitOff, st: player.st, d: player.stepD, cyc: strideOf(C().sheet, WALK6), run: strideOf(C().sheet, ['run0', 'run1', 'run2', 'run3']) }),
     save: () => { saveCheckpoint(); return curSlot; },
