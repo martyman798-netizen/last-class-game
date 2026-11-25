@@ -58,6 +58,15 @@
   #rotate .ph{width:46px;height:80px;border:4px solid #ffd23f;border-radius:9px;position:relative;animation:turn 1.8s ease-in-out infinite}
   #rotate .ph:after{content:'';position:absolute;left:50%;bottom:5px;width:10px;height:3px;margin-left:-5px;background:#ffd23f;border-radius:2px}
   @keyframes turn{0%,20%{transform:rotate(0)}55%,100%{transform:rotate(-90deg)}}
+  /* floating controls: the two halves of the screen catch thumbs (not the top strip: badges, pause) */
+  #zoneL,#zoneR{position:absolute;top:18%;bottom:0;width:50%;pointer-events:auto;display:none;touch-action:none}
+  #zoneL{left:0} #zoneR{right:0}
+  body.touch.float #zoneL,body.touch.float #zoneR{display:block}
+  body.touch.noctl #zoneL,body.touch.noctl #zoneR{display:none}
+  body.float #stick:not(.act),body.float #apad:not(.act){opacity:.55}
+  #bWhistle.ready{background:rgba(255,210,63,.45)}
+  #bWhistle.go{background:#ffd23f;color:#1b1630;box-shadow:0 0 14px #ffd23f;animation:fpulse .5s infinite alternate}
+  @keyframes fpulse{to{transform:scale(1.1)}}
   /* nothing to fight: no sticks (menus, cards, scenes, the title) */
   body.touch.noctl #stick,body.touch.noctl #apad,body.touch.noctl #bBlock,body.touch.noctl #bWhistle{display:none}
   body.touch.nopause #bPause{display:none}
@@ -68,10 +77,11 @@
 <body>
 <div id="wrap"><canvas id="c" width="480" height="270"></canvas></div>
 <div id="pad">
+  <div id="zoneL"></div><div id="zoneR"></div>
   <div id="stick"><div id="knob"></div></div>
   <div id="apad"><span class="lab u">JUMP</span><span class="lab d">GRAB</span><span class="lab l">HIT</span><span class="lab r">HIT</span><div id="aknob"><span class="lab c">HOLD</span></div></div>
   <div class="btn" id="bBlock">BLOCK</div>
-  <div class="btn" id="bWhistle">WHSTL</div>
+  <div class="btn" id="bWhistle">FINISH</div>
   <div class="btn" id="bPause">II</div>
 </div>
 <div id="rotate"><div class="ph"></div>TURN YOUR PHONE SIDEWAYS<small>Last Class plays in landscape</small></div>
@@ -404,6 +414,15 @@ function setupTouch() {
   stick.addEventListener('touchstart', start, { passive: false });
   stick.addEventListener('touchmove', move, { passive: false });
   stick.addEventListener('touchend', end); stick.addEventListener('touchcancel', end);
+  /* FLOATING (Brawl Stars style): put a thumb down anywhere on the left half and the stick
+     appears under it; anywhere on the right half and the action pad does. Lift, and they go home. */
+  const zl = document.getElementById('zoneL');
+  if (zl) {
+    zl.addEventListener('touchstart', e => { if (id !== null || badgeTouch(e.changedTouches[0])) { e.preventDefault(); return; } floatTo(stick, e.changedTouches[0], 'left'); start(e); }, { passive: false });
+    zl.addEventListener('touchmove', move, { passive: false });
+    const zend = e => { end(e); if (id === null) restTouch(stick); };
+    zl.addEventListener('touchend', zend); zl.addEventListener('touchcancel', zend);
+  }
   function mv(t) {
     let dx = t.clientX - cx, dy = t.clientY - cy;
     const R = R0 * TL.k, d = Math.hypot(dx, dy) || 1, cl = Math.min(d, R);
@@ -423,7 +442,13 @@ function setupTouch() {
   };
   bind(document.getElementById('bBlock'), 'block');
   bind(document.getElementById('bWhistle'), 'whistle');
-  setupActionPad();
+  const ap = setupActionPad(), zr = document.getElementById('zoneR'), padEl = document.getElementById('apad');
+  if (ap && zr) {
+    zr.addEventListener('touchstart', e => { if (ap.busy() || badgeTouch(e.changedTouches[0])) { e.preventDefault(); return; } floatTo(padEl, e.changedTouches[0], 'right'); ap.start(e); }, { passive: false });
+    zr.addEventListener('touchmove', ap.move, { passive: false });
+    const zend = e => { ap.end(e); if (!ap.busy()) restTouch(padEl); };
+    zr.addEventListener('touchend', zend); zr.addEventListener('touchcancel', zend);
+  }
   const bp = document.getElementById('bPause');
   if (bp) {
     const tp = e => { e.preventDefault(); A.init(); A.resume(); togglePause(); };
@@ -492,7 +517,22 @@ function setupActionPad() {
   pad.addEventListener('touchstart', start, { passive: false });
   pad.addEventListener('touchmove', move, { passive: false });
   pad.addEventListener('touchend', end); pad.addEventListener('touchcancel', end);
+  return { start, move, end, busy: () => id !== null };
 }
+function badgeTouch(t) {                               // a thumb on the SKILL POINT badge opens the tree, not a stick
+  if (!(state === 'play' && pendingPicks > 0)) return false;
+  const r = cv.getBoundingClientRect(), x = (t.clientX - r.left) / r.width * LW, y = (t.clientY - r.top) / r.height * LH;
+  if (x > LVL_BADGE.x - 10 && x < LVL_BADGE.x + LVL_BADGE.w + 10 && y > LVL_BADGE.y - 10 && y < LVL_BADGE.y + LVL_BADGE.h + 10) { treeReq = true; return true; }
+  return false;
+}
+function floatTo(el, t, side) {                       // centre a pad under the thumb
+  const P = el.offsetWidth || 120;
+  el.style.bottom = Math.round(innerHeight - t.clientY - P / 2) + 'px';
+  if (side === 'left') { el.style.left = Math.round(t.clientX - P / 2) + 'px'; el.style.right = ''; }
+  else { el.style.right = Math.round(innerWidth - t.clientX - P / 2) + 'px'; el.style.left = ''; }
+  el.classList.add('act');
+}
+function restTouch(el) { el.classList.remove('act'); if (TL.rest && TL.rest[el.id]) Object.assign(el.style, TL.rest[el.id]); }
 
 /* phones play sideways: ask for fullscreen + landscape where the browser allows it,
    and show a "turn your phone" card while it is held upright */
@@ -2475,6 +2515,10 @@ function finishable(e) {
   if (e.t.boss) return e.st === 'stagger' && e.hp < e.maxhp * 0.4;
   return e.st === 'stagger' || (e.st === 'down' && e.hp <= e.maxhp * 0.45) || (e.hp <= e.maxhp * 0.2 && e.st !== 'air' && e.st !== 'thrown');
 }
+/* THE FINISHER METER (was the whistle). The gold bar fills as you fight and holds three
+   charges; each one buys a finisher on someone stunned, reeling or nearly done. */
+const finCharge = p => p.maxsuper / 3;
+const finCharges = p => Math.floor((p.super + 0.001) / finCharge(p));
 function findFinishable(p) {
   if (!has('finisher')) return null;
   let best = null, bd = 1e9;
@@ -2505,6 +2549,8 @@ function startFinisher(p, e) {
   p.envFin = (e.baseZ || 0) === 0 ? envFor(e) : null;
   if (p.envFin) logEv('envfin:' + p.envFin.type);
   p.setState('finish', FIN_END); p.fin = e; p.iframes = FIN_END + 10;
+  slowMo = Math.max(slowMo, 30); focus = { x: (p.x + e.x) / 2, y: e.y - e.h * 0.5 }; M.muffle(true);   // the world holds its breath
+  if (has('whistle')) { p.hp = Math.min(p.maxhp, p.hp + 10); say(p.x, p.y - 92, '+10 BLOODLUST', '#ff5252'); }
   p.face = sgn(e.x - p.x) || p.face; p.vx = 0; p.vy = 0; p.blocking = false;
   e.finLock = true; e.vx = 0; e.hasToken = false; e.queue = [];
   if (e.st === 'down') { e.setState('stagger', 999); }
@@ -2612,7 +2658,7 @@ const ITEMS = {
   vest:     { slot: 'BODY',  name: 'WEIGHTED VEST',    rar: 2, col: '#607d8b', pal: { shirt: [84, 110, 122] }, up: 'dfa',       fx: { hp: 25, dfaK: 0.5, speed: -0.05 },
               desc: 'death-from-above craters 50% bigger; +25 max health' },
   jersey:   { slot: 'BODY',  name: 'SPIN JERSEY',      rar: 3, col: '#1e88e5', pal: { shirt: [30, 136, 229] }, up: 'wallkick',  fx: { wkK: 0.6, draft: 1, run: 0.12 },
-              desc: 'wall kicks hit 60% harder; running charges the whistle' },
+              desc: 'wall kicks hit 60% harder; running fills the finisher bar' },
   champ:    { slot: 'BODY',  name: "CHAMPION'S TANK",  rar: 3, col: '#ffd23f', pal: { shirt: [255, 200, 40] }, up: null,       fx: { furyK: 0.5, unstoppable: 1 },
               desc: 'fury fills 50% faster; no knockdowns above half health' },
   // ---- GEAR ----
@@ -2623,7 +2669,7 @@ const ITEMS = {
   headph:   { slot: 'GEAR',  name: 'HEADPHONES',       rar: 2, col: '#ff4fa3', ico: 'phones', up: 'cutter', fx: { cutK: 0.5, furyK: 0.2 },
               desc: 'the cutter hits 50% harder' },
   goldwh:   { slot: 'GEAR',  name: 'GOLDEN WHISTLE',   rar: 2, col: '#ffd23f', up: 'whistle',  fx: { superK: 0.6 },
-              desc: 'the whistle charges 60% faster' },
+              desc: 'the finisher bar fills 60% faster' },
   strap:    { slot: 'GEAR',  name: 'YOGA STRAP',       rar: 2, col: '#ce93d8', up: 'charge',   fx: { crane: 1, charge: 0.5 },
               desc: 'charges faster; a full charge launches them' },
   energy:   { slot: 'GEAR',  name: 'ENERGY DRINK',     rar: 1, col: '#76ff03', ico: 'can', up: null, fx: { killStam: 25, stam: 0.2 },
@@ -3581,7 +3627,7 @@ function continueRun() {
   endlessMode = false; tutorial = null; ngPlus = !!cp.ng;
   CLS = cp.cls in CLASSES ? cp.cls : CLS;
   resetGame();
-  learned = new Set(cp.skills || []); passives = cp.pas || {}; level = cp.lvl || 1; xp = cp.xp || 0; pendingPicks = cp.pts || 0;
+  learned = new Set((cp.skills || []).concat(BASE_SKILLS)); passives = cp.pas || {}; level = cp.lvl || 1; xp = cp.xp || 0; pendingPicks = cp.pts || 0;
   player.maxhp += skillFx('hp');
   for (const sl of SLOTS) if (cp.gear && cp.gear[sl] && ITEMS[cp.gear[sl]]) { gear[sl] = cp.gear[sl]; player.maxhp += ITEMS[gear[sl]].fx.hp || 0; }
   buildSkin();
@@ -3910,7 +3956,7 @@ function addCombo() {
   combo++; comboT = 112;
   if (combo > comboBest) comboBest = combo;
   if (roundStats && combo > roundStats.combo) roundStats.combo = combo;
-  p.super = Math.min(p.maxsuper, p.super + 4 * (1 + perk('superK')));
+  p.super = Math.min(p.maxsuper, p.super + 4 * (1 + perk('superK') + (has('whistle') && progression() && learned.has('whistle') ? 0.5 : 0)));
   // every 5 hits pays back stamina, so pressing the advantage funds itself
   if (combo % 5 === 0) {
     p.stam = Math.min(p.maxstam, p.stam + 11);
@@ -4495,10 +4541,15 @@ function updatePlayer() {
   }
   if (p.st === 'block') p.setState('idle');
 
-  if (!air && wantWhistle && p.super >= p.maxsuper && has('whistle')) { eat(['u']); T.whistleEdge = false; doWhistle(); return; }
-  if (!air && wantHeavy && !T.charging) {
+  if (!air && wantWhistle) {                               // FINISH: spend a charge on whoever's stunned
+    eat(['u']); T.whistleEdge = false;
     const fe = findFinishable(p);
-    if (fe) { eat(['k']); T.heavyEdge = false; p.charge = 0; startFinisher(p, fe); return; }
+    if (fe && finCharges(p) >= 1) { p.super -= finCharge(p); p.charge = 0; startFinisher(p, fe); return; }
+    if (lockT <= 0) { lockT = 50; say(p.x, p.y - 66, finCharges(p) < 1 ? 'FINISHER BAR NOT FULL' : 'STUN SOMEONE FIRST', '#9e9e9e'); }
+  }
+  if (!air && wantHeavy && !T.charging && finCharges(p) >= 1) {          // HEAVY next to someone reeling works too
+    const fe = findFinishable(p);
+    if (fe) { eat(['k']); T.heavyEdge = false; p.charge = 0; p.super -= finCharge(p); startFinisher(p, fe); return; }
   }
   if (!air && wantJump) {
     eat(['space']); T.jumpEdge = false;
@@ -6114,7 +6165,7 @@ function setAdjust(it, d) {
   else if (it === 'ENEMY CARDS') SET.cards = SET.cards === false;
   else if (it === 'SKILL TREE') SET.tree = SET.tree === 'manual' ? 'calm' : 'manual';
   else if (it === 'STORY SCENES') SET.story = SET.story === false;
-  else if (it === 'PAD POSITION') { SET.padPos = SET.padPos === 'low' ? 'mid' : 'low'; fit(); }
+  else if (it === 'PAD POSITION') { const o = ['float', 'mid', 'low'], i = Math.max(0, o.indexOf(SET.padPos || 'float')); SET.padPos = o[(i + (d < 0 ? 2 : 1)) % 3]; fit(); }
   else if (it === 'PAD SIZE') { const o = ['s', 'm', 'l'], i = o.indexOf(SET.padSize || 'm'); SET.padSize = o[(i + (d < 0 ? 2 : 1)) % 3]; fit(); }
   else if (it === 'DIFFICULTY') {
     if (state === 'play' && menu.from === 'pause') { say(player.x, player.y - 60, 'CHANGE IT BETWEEN RUNS', '#ff5252'); return; }
@@ -6177,7 +6228,7 @@ function drawMenu() {
     else if (it === 'ENEMY CARDS') val = on(SET.cards !== false);
     else if (it === 'SKILL TREE') val = SET.tree === 'manual' ? 'WHEN I ASK' : 'WHEN CLEAR';
     else if (it === 'STORY SCENES') val = on(SET.story !== false);
-    else if (it === 'PAD POSITION') val = SET.padPos === 'low' ? 'LOW' : 'MIDDLE';
+    else if (it === 'PAD POSITION') val = SET.padPos === 'low' ? 'LOW' : SET.padPos === 'mid' ? 'MIDDLE' : 'FLOATING';
     else if (it === 'PAD SIZE') val = { s: 'SMALL', m: 'MEDIUM', l: 'LARGE' }[SET.padSize || 'm'];
     else if (it === 'DIFFICULTY') val = '< ' + DIFF().n + ' >';
     else if (it === 'FULLSCREEN') val = on(!!document.fullscreenElement);
@@ -6186,16 +6237,16 @@ function drawMenu() {
   });
   ctx.textAlign = 'center'; ctx.font = '7px monospace'; ctx.fillStyle = '#6b6388';
   const it = SET_ITEMS[menu.sel];
-  ctx.fillText(it === 'DIFFICULTY' ? DIFF().note : it === 'FLASHES' ? 'tones down the white flashes on big hits' : it === 'STORY SCENES' ? 'off: no cut-scenes, straight to the fighting' : it === 'PAD POSITION' ? 'phone: where the stick and buttons sit' : it === 'PAD SIZE' ? 'phone: how big the stick and buttons are' : it === 'SKILL TREE' ? 'after a level up: open the tree once the room is clear, or only when you ask' : isTouch() ? 'tap a row - left half lowers, right half raises' :
+  ctx.fillText(it === 'DIFFICULTY' ? DIFF().note : it === 'FLASHES' ? 'tones down the white flashes on big hits' : it === 'STORY SCENES' ? 'off: no cut-scenes, straight to the fighting' : it === 'PAD POSITION' ? 'floating: touch anywhere on a side and the stick appears there' : it === 'PAD SIZE' ? 'phone: how big the stick and buttons are' : it === 'SKILL TREE' ? 'after a level up: open the tree once the room is clear, or only when you ask' : isTouch() ? 'tap a row - left half lowers, right half raises' :
                GP.active ? 'up/down choose   left/right change   A select   B back' : 'arrows choose   left/right change   enter select   esc back', LW / 2, 246);
   ctx.textAlign = 'left';
 }
 function drawControls() {
   ctx.font = 'bold 16px monospace'; ctx.fillStyle = '#ffd23f'; ctx.fillText('CONTROLS', LW / 2, 30);
   const cols = [
-    ['KEYBOARD', ['move  WASD / arrows', 'light  J', 'heavy  K', 'jump  SPACE', 'grab / throw  L', 'block  H or SHIFT', 'dodge  block + direction', 'whistle  U', 'pause  P / ESC']],
-    ['CONTROLLER', ['move  stick / d-pad', 'light  X', 'heavy  Y', 'jump  A', 'grab / throw  B', 'block  RB / RT', 'dodge  block + stick', 'whistle  LB', 'pause  START']],
-    ['TOUCH', ['move  left stick', 'light  swipe left/right', 'heavy  tap the pad', 'jump  swipe up', 'grab / throw  swipe down', 'block  BLOCK button', 'dodge  BLOCK + flick', 'whistle  WHSTL', 'charge  hold the pad']]
+    ['KEYBOARD', ['move  WASD / arrows', 'light  J', 'heavy  K', 'jump  SPACE', 'grab / throw  L', 'block  H or SHIFT', 'dodge  block + direction', 'finisher  U', 'pause  P / ESC']],
+    ['CONTROLLER', ['move  stick / d-pad', 'light  X', 'heavy  Y', 'jump  A', 'grab / throw  B', 'block  RB / RT', 'dodge  block + stick', 'finisher  LB', 'pause  START']],
+    ['TOUCH', ['move  touch anywhere on the left', 'light  swipe left/right', 'heavy  tap the pad', 'jump  swipe up', 'grab / throw  swipe down', 'block  BLOCK button', 'dodge  BLOCK + flick', 'finisher  FINISH button', 'charge  hold the pad']]
   ];
   cols.forEach(([h, rows], c) => {
     const x = 84 + c * 156;
@@ -6899,7 +6950,7 @@ const SKILLS = {
   wallkick: { n: 'WALL KICK',        tier: 3, req: ['parkour'], how: 'jump at a wall, JUMP again', desc: 'kick off the walls.' },
   cutter:   { n: 'THE CUTTER',       tier: 3, req: ['air', 'grab'], how: 'GRAB in the air above someone', desc: 'out of nowhere.' },
   dfa:      { n: 'DEATH FROM ABOVE', tier: 4, req: ['air'], how: 'HEAVY in the air after jumping off something tall', desc: 'the higher you fall from, the bigger the crater.' },
-  whistle:  { n: 'THE WHISTLE',      tier: 4, how: 'fill the gold bar, then WHISTLE', desc: 'one blast stuns the whole room.' }
+  whistle:  { n: 'BLOODLUST',        tier: 4, how: 'finish someone', desc: 'finishers heal 10, and the finisher bar fills 50% faster.' }
 };
 const PASSIVES = {
   protein: { n: 'PROTEIN SHAKE', fx: { dmg: 0.1 },    desc: '+10% damage.' },
@@ -6945,8 +6996,9 @@ function skillFx(key) {
   for (const id in ABSURD) if (ABSURD[id].fx && ABSURD[id].fx[key] && learned.has(id)) v += ABSURD[id].fx[key];
   return v;
 }
+const BASE_SKILLS = ['grab', 'parry', 'finisher'];      // everyone walks in knowing these
 function initSkills() {
-  learned = new Set(); passives = {}; level = 1; xp = 0; pendingPicks = 0; lvlCard = null;
+  learned = new Set(BASE_SKILLS); passives = {}; level = 1; xp = 0; pendingPicks = 0; lvlCard = null;
   if (ngPlus) TREE.forEach(n => { if (PASSIVES[n[0]]) passives[n[0]] = 1; else learned.add(n[0]); });
 }
 function lockedHint(what) {
@@ -8671,13 +8723,13 @@ function drawPause() {
   ctx.fillStyle = '#ff9800'; ctx.fillText('WEARING:  ' + worn, LW / 2, 192);
   ctx.font = '7px monospace'; ctx.fillStyle = '#6b6388';
   if (GP.active) {
-    ctx.fillText('stick move  X light  Y heavy  A jump  RB block  B grab  LB whistle', LW / 2, 204);
+    ctx.fillText('stick move  X light  Y heavy  A jump  RB block  B grab  LB finisher', LW / 2, 204);
     ctx.fillText('X,X,Y launches  -  block right before a hit = parry  -  RB + stick = dodge', LW / 2, 215);
   } else if (document.body.classList.contains('touch')) {
     ctx.fillText('RIGHT PAD: swipe <- -> hit   swipe up jump   swipe down grab/throw', LW / 2, 204);
     ctx.fillText('tap = heavy   hold still = charge heavy   swipe, swipe, tap = launcher', LW / 2, 215);
   } else {
-    ctx.fillText('MOVE wasd  LIGHT j  HEAVY k  JUMP space  BLOCK h  GRAB l  WHISTLE u', LW / 2, 204);
+    ctx.fillText('MOVE wasd  LIGHT j  HEAVY k  JUMP space  BLOCK h  GRAB l  FINISHER u', LW / 2, 204);
     ctx.fillText('j,j,k launches  -  block right before a hit = parry  -  red = jump it', LW / 2, 215);
   }
   ctx.textAlign = 'left';
@@ -8728,8 +8780,11 @@ function drawHUD() {
     if (it) drawItemIcon(it, x + 1, y + 2, 1); else { ctx.fillStyle = '#3a3150'; ctx.fillRect(x + 4, y + 5, 3, 3); }
   });
   bar(10, 21, 96, 6, p.stam / p.maxstam, p.stam < 20 ? '#ff9800' : '#4fc3f7');
-  const full = p.super >= p.maxsuper;
-  bar(10, 31, 96, 5, p.super / p.maxsuper, full && (stateT % 20 < 10) ? '#fff' : '#ffd23f');
+  const full = finCharges(p) >= 1, chg = finCharges(p), seg = p.maxsuper / 3;
+  for (let i = 0; i < 3; i++) {                        // three finisher charges
+    const f = clamp((p.super - i * seg) / seg, 0, 1), ready = f >= 1;
+    bar(10 + i * 33, 31, 30, 5, f, ready ? (stateT % 24 < 12 ? '#fff' : '#ffd23f') : '#a08020');
+  }
   const inFury = p.furyT > 0;
   bar(10, 40, 96, 4, inFury ? p.furyT / 540 : p.fury / 100, inFury ? (stateT % 8 < 4 ? '#ff3b3b' : '#ffd23f') : '#ff6b35');
   ctx.font = 'bold 5px monospace'; ctx.textAlign = 'left'; ctx.fillStyle = inFury ? '#ff3b3b' : '#a0502a';
@@ -8737,7 +8792,7 @@ function drawHUD() {
   drawXPBar(); drawClassTrait();
   ctx.font = 'bold 5px monospace'; ctx.textAlign = 'left';
   ctx.fillStyle = full ? '#ffd23f' : '#777';
-  ctx.fillText(!has('whistle') ? 'WHISTLE (locked)' : full ? 'WHISTLE READY [' + btn('u') + ']' : 'WHISTLE', 110, 36);
+  ctx.fillText(full ? 'FINISHER x' + chg + ' [' + btn('u') + ']' : 'FINISHER', 110, 36);
 
   ctx.textAlign = 'right';
   ctx.font = 'bold 11px monospace';
@@ -8792,7 +8847,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611251737', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611251806', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -8912,7 +8967,9 @@ function layoutTouch() {
   const sz = { s: 0.82, m: 1, l: 1.2 }[SET.padSize || 'm'], low = SET.padPos === 'low';
   let P = Math.round((TL.side ? clamp(Math.round(H * 0.33), 96, 156) : (TL.P || 110)) * sz);   // thumb-sized; may reach a little over the picture
   TL.k = P / 124;
-  const set = (id, st) => { const el = document.getElementById(id); if (el) Object.assign(el.style, st); };
+  TL.rest = TL.rest || {};
+  const set = (id, st) => { const el = document.getElementById(id); if (!el) return; Object.assign(el.style, st); if (id === 'stick' || id === 'apad') TL.rest[id] = Object.assign({}, st); };
+  document.body.classList.toggle('float', !SET.padPos || SET.padPos === 'float');
   const px = v => Math.round(v) + 'px';
   const kn = px(P * 0.4);
   set('knob', { width: kn, height: kn }); set('aknob', { width: kn, height: kn });
@@ -8938,7 +8995,13 @@ function layoutTouch() {
 }
 /* the sticks only show when there is fighting to do; on menus, cards and scenes they'd just be in the way */
 let ctlShown = null;
+let finBtnOn = null;
 function syncControls() {
+  const fb = document.getElementById('bWhistle');
+  if (fb && state === 'play') {
+    const v = finCharges(player) >= 1 ? (findFinishable(player) ? 2 : 1) : 0;
+    if (v !== finBtnOn) { finBtnOn = v; fb.classList.toggle('ready', v === 1); fb.classList.toggle('go', v === 2); }
+  }
   const fight = (state === 'play' || state === 'door') && !paused && !menu && !scene;
   const pause = (state === 'play' || state === 'door') && !menu && !scene;
   const key = (fight ? 1 : 0) + (pause ? 2 : 0);
@@ -9091,6 +9154,9 @@ function boot() {
     ev: () => worldEv && { need: worldEv.need, phase: worldEv.phase, ko: worldEv.ko, total: worldEv.total, through: worldEv.through, wave: worldEv.wave },
     only: type => { flowOff = true; enemies.length = 0; spawnQ.length = 0; spawnEnemy(type); },
     spawn: type => spawnEnemy(type),
+    fin: () => ({ super: Math.round(player.super), charges: finCharges(player), st: player.st, slow: slowMo, learned: [...learned] }),
+    setSuper: v => { player.super = v; },
+    stunFoe: () => { const e = enemies.find(e => !e.dead && !e.crowd); if (e) { e.x = player.x + player.face * 22; e.y = player.y; e.setState('stagger', 120); } return !!e; },
     gait: () => ({ x: player.x, y: player.y, fr: playerFrame(player), off: player.gaitOff, st: player.st, d: player.stepD, cyc: strideOf(C().sheet, WALK6), run: strideOf(C().sheet, ['run0', 'run1', 'run2', 'run3']) }),
     save: () => { saveCheckpoint(); return curSlot; },
     trait: () => ({ zen: player.zenT, cad: player.cad, peace: player.peaceT, hp: player.hp, max: player.maxhp, barks: enemies.filter(e => e.bark).map(e => e.type + ': ' + e.bark.txt) }),
