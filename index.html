@@ -2570,13 +2570,149 @@ function envFor(e) {
   });
   return best;
 }
+/* ======================= FINISHER CHOREOGRAPHY =======================
+   Each finisher is a little scripted fight scene: frame by frame it places the instructor and
+   the victim (lifted, flipped, spun, sent to the moon) and calls finImpact() on the hit.
+   p.finFr / p.finDy: the instructor's frame and how high he is; e.finPose: the victim's frame,
+   height and rotation. Three per class, picked at random, never the same one twice running. */
+const ease = k => k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+const lerpN = (a, b, k) => a + (b - a) * k;
+function holdVictim(p, e, dx, dy, rot, fr, dyDepth) {
+  e.x = p.x + dx; e.y = p.y + (dyDepth || 0); e.vx = 0; e.vy = 0;
+  e.finPose = { dy, rot, fr };
+}
+function bowl(p, e, dir) {                               // whoever's in the way of a flying body goes down too
+  enemies.forEach(o => {
+    if (o === e || o.dead || o.crowd || o.finLock) return;
+    const dx = (o.x - p.x) * dir;
+    if (dx > 10 && dx < 230 && Math.abs(o.y - p.y) < 24) {
+      o.hp -= 18; say(o.x, o.y - o.h - 8, 'STRIKE!', '#4fc3f7'); knockDown(o); o.vx = dir * 5;
+      if (o.hp <= 0) killEnemy(o);
+    }
+  });
+}
+const FIN_MOVES = {
+  suplex: { hit: 26, name: 'GERMAN SUPLEX', len: 52, step(p, e, t, d) {
+    if (t < 8) { p.finFr = 'grab'; holdVictim(p, e, lerpN(e.x - p.x, d * 14, 0.4), 0, 0, 'hurt'); return; }
+    if (t < 26) {                                        // up and over his head, backwards
+      const k = ease((t - 8) / 18), a = k * Math.PI;
+      p.finFr = k < 0.45 ? 'carry0' : 'throw';
+      holdVictim(p, e, d * 14 * Math.cos(a), 6 + Math.sin(a) * 30, -d * a, 'air');
+      return;
+    }
+    if (t === 26) { holdVictim(p, e, -d * 15, 0, -d * Math.PI, 'air'); finImpact(p, e, { name: 'GERMAN SUPLEX', dir: -d, vx: -d * 2, vz: 3, slam: true, quake: 2, shake: 15 }); }
+    p.finFr = t < 40 ? 'slam' : 'landR';
+  } },
+  piledriver: { hit: 35, name: 'PILEDRIVER', len: 56, step(p, e, t, d) {
+    if (t < 8) { p.finFr = 'grab'; holdVictim(p, e, lerpN(e.x - p.x, d * 12, 0.4), 0, 0, 'hurt'); return; }
+    if (t < 18) { const k = ease((t - 8) / 10); p.finFr = 'carry0'; holdVictim(p, e, d * lerpN(12, 3, k), 10 + k * 22, d * k * Math.PI, 'air'); return; }
+    if (t < 30) {                                       // up he goes, holding them upside down
+      const j = Math.sin((t - 18) / 12 * Math.PI / 2); p.finFr = 'tuck'; p.finDy = j * 30;
+      holdVictim(p, e, d * 3, 32 + p.finDy, d * Math.PI, 'air'); if (t === 20) A.tone(300, 600, 0.2, 'square', 0.1); return;
+    }
+    if (t < 35) { const k = (t - 30) / 5; p.finFr = 'slam'; p.finDy = 30 * (1 - k); holdVictim(p, e, d * 3, 32 * (1 - k) + p.finDy * 0, d * Math.PI, 'air'); speedT = 6; return; }
+    if (t === 35) { p.finDy = 0; holdVictim(p, e, d * 3, 0, d * Math.PI, 'air'); finImpact(p, e, { name: 'PILEDRIVER', vx: d * 1.5, vz: 2, slam: true, quake: 3, shake: 18 }); }
+    p.finFr = t < 46 ? 'slam' : 'landR'; p.finDy = 0;
+  } },
+  sweepAxe: { hit: 35, name: 'SUN SALUTATION', len: 52, step(p, e, t, d) {
+    if (t < 6) { p.finFr = 'kickW'; holdVictim(p, e, lerpN(e.x - p.x, d * 16, 0.4), 0, 0, 'hurt'); return; }
+    if (t === 6) { A.heavy(0.4); impact(e.x, e.y - 6, d, false); shake = 5; }
+    if (t < 30) {                                       // swept off their feet, spinning up
+      const k = (t - 6) / 24;
+      p.finFr = t < 12 ? 'kickS' : t < 18 ? 'kickR' : t < 24 ? 'jumpUp' : 'axeW';
+      p.finDy = t < 18 ? 0 : Math.sin(Math.min(1, (t - 18) / 10) * Math.PI / 2) * 50;
+      holdVictim(p, e, d * 16, Math.sin(Math.min(1, k * 1.3) * Math.PI / 2) * 38, d * k * Math.PI * 2.5, 'air');
+      return;
+    }
+    if (t < 35) { const k = (t - 30) / 5; p.finFr = 'axeS'; p.finDy = 50 * (1 - k); holdVictim(p, e, d * 16, 38 * (1 - k), d * Math.PI * 2.5, 'air'); speedT = 6; return; }
+    if (t === 35) { p.finDy = 0; holdVictim(p, e, d * 16, 0, d * Math.PI * 0.5, 'air'); finImpact(p, e, { name: 'SUN SALUTATION', vx: d * 3, vz: 1.5, slam: true, quake: 2, shake: 14 }); }
+    p.finFr = t < 46 ? 'axeS' : 'axeR'; p.finDy = 0;
+  } },
+  moon: { hit: 54, name: 'TO THE MOON', len: 64, upper: false, step(p, e, t, d, m) { moonShot(p, e, t, d, m, ['hiKickW', 'hiKickS', 'kickR']); } },
+  uppercut: { hit: 54, name: 'HILL CLIMB', len: 64, step(p, e, t, d, m) { moonShot(p, e, t, d, m, ['upW', 'upS', 'upR']); } },
+  spin: { hit: 46, name: 'SPIN CYCLE', len: 58, step(p, e, t, d) {
+    if (t < 8) { p.finFr = 'grab'; holdVictim(p, e, lerpN(e.x - p.x, d * 16, 0.4), 0, 0, 'hurt'); return; }
+    if (t < 46) {                                       // round and round, faster and faster
+      const k = (t - 8) / 38, ang = Math.pow(k, 1.7) * Math.PI * 8;   // four full turns, ending facing forward
+      const c = Math.cos(ang), sn = Math.sin(ang);
+      p.face = c >= 0 ? d : -d; p.finFr = (t >> 1) % 2 ? 'spinS' : 'spinR';
+      holdVictim(p, e, d * 18 * c, 8 + k * 6, -d * Math.PI / 2 * c, 'air', sn * 4);
+      if (k > 0.5) speedT = 4;
+      if (t % 6 === 0) A.tone(220 + k * 400, 260 + k * 500, 0.05, 'square', 0.05);
+      return;
+    }
+    if (t === 46) {
+      p.face = d; holdVictim(p, e, d * 18, 10, -d * Math.PI / 2, 'air');
+      finImpact(p, e, { name: 'SPIN CYCLE', vx: d * 13, vz: 3, quake: 1, shake: 12, noBlood: true });
+      bowl(p, e, d);
+    }
+    p.finFr = t < 52 ? 'throw' : 'landR';
+  } },
+};
+function moonShot(p, e, t, d, m, frames) {             // launched off the top of the screen, and back down
+  if (t < 8) { p.finFr = frames[0]; holdVictim(p, e, lerpN(e.x - p.x, d * 14, 0.4), 0, 0, 'hurt'); return; }
+  if (t === 8) { A.crunch(1); A.heavy(0.7); impact(e.x, e.y - 20, d, true); shake = 8; hitStop = 4; flashScreen = 4; bloodSpray(e.x, e.y - 24, e.y, 8, d, 1); }
+  if (t < 32) {
+    const k = t - 8; p.finFr = t < 16 ? frames[1] : frames[2];
+    holdVictim(p, e, d * 14, k * k * 0.55, d * k * 0.5, 'air'); speedT = 4;
+    if (t === 31) say(e.x, 30, 'BYE', '#fff');
+    return;
+  }
+  if (t < 44) {                                         // gone. a twinkle up top
+    p.finFr = 'idle0'; holdVictim(p, e, d * 14, 400, 0, 'air');
+    if (t === 36) { ring(e.x, 18, '#fff', 3, 20); A.tone(1800, 2400, 0.15, 'sine', 0.08); }
+    return;
+  }
+  if (t < 54) { const k = (t - 44) / 10; holdVictim(p, e, d * 14, 300 * (1 - k * k), d * t * 0.6, 'air'); speedT = 4; if (t === 50) A.tone(900, 200, 0.4, 'sawtooth', 0.06); return; }
+  if (t === 54) { holdVictim(p, e, d * 14, 0, d * Math.PI * 0.5, 'air'); finImpact(p, e, { name: m.name, vx: d * 1, vz: 1, slam: true, quake: 3, shake: 18, crater: true }); }
+  p.finFr = 'idle0';
+}
+const FIN_SETS = { bb: ['classic', 'suplex', 'piledriver'], yoga: ['classic', 'sweepAxe', 'moon'], cyc: ['classic', 'spin', 'uppercut'] };
+let lastFinMove = null;
+let forceFin = null;                                   // test hook: the next finisher
+function pickFinMove() {
+  if (forceFin) { const k = forceFin; forceFin = null; return (lastFinMove = k); }
+  const opts = (FIN_SETS[CLS] || ['classic']).filter(k => k !== lastFinMove);
+  return (lastFinMove = pick(opts));
+}
+let impactFrame = 0, speedT = 0;                      // comic-book impact frame (real frames), speed lines
+/* the hit itself: shared by every finisher */
+function finImpact(p, e, o) {
+  const dir = o.dir || p.face, sy = e.y - e.h * 0.55, F = FINISH[CLS];
+  slowMo = 42; focus = { x: (p.x + e.x) / 2, y: sy, fin: o.name };
+  hitStop = 6; flashScreen = 6; shake = o.shake || 12; camKX += dir * 6;
+  impactFrame = 5;
+  A.crunch(1.3); A.heavy(0.8);
+  impact(e.x - dir * 6, sy, dir, true); impact(e.x - dir * 4, sy - 6, dir, true);
+  if (!o.noBlood) bloodSpray(e.x, sy, e.y, 26, dir, 1.6);
+  combo++; comboT = 112; if (combo > comboBest) comboBest = combo;
+  score += 250; say(e.x, e.y - e.h - 10, '+250', '#ffd23f', true);
+  if (o.slam) { ring(e.x, e.y, '#ffd23f', 6, 56); dust(e.x, e.y, 12, 0); dust(e.x, e.y, 10, -dir); }
+  if (o.crater) { ring(e.x, e.y, '#fff', 8, 80); for (let i = 0; i < 14; i++) parts.push({ x: e.x + rnd(-14, 14), y: e.y, vx: rnd(-2.5, 2.5), vy: rnd(-3.5, -1), g: 0.2, life: rnd(20, 34), col: pick(['#8d6e63', '#a1887f', '#5d4037']), s: rnd(2, 3) }); }
+  quake(e.x, o.quake || 1);
+  e.finPose = null;
+  if (e.t.boss) {                                      // bosses take a big chunk instead
+    e.hp -= 45; e.finLock = false; e.setState('down', 60); e.poise = e.maxpoise; e.vx = dir * 6;
+    if (e.hp <= 0) killEnemy(e);
+  } else {
+    if (gore && !e.missing.has('head') && Math.random() < 0.55) sever(e, 'head', dir, true);
+    e.hp = 0; e.finLock = false; killEnemy(e);
+    if (e.rag) { e.rag.vx = o.vx != null ? o.vx : dir * 7.5; e.rag.vz = o.vz != null ? o.vz : F.lift; e.rag.rotV = dir * 0.35; }
+    if (e.rag && e.pendingRag) { e.rag.vx = e.pendingRag.vx; e.rag.vz = e.pendingRag.vz; e.pendingRag = null; }
+  }
+  if (roundStats) roundStats.sev++;
+  styleAdd(p.envFin ? 'env' : 'finish', p.envFin ? 45 : 35);
+}
 function startFinisher(p, e) {
   logEv('finisher');
   if (perk('finHeal')) { p.hp = Math.min(p.maxhp, p.hp + perk('finHeal')); say(p.x, p.y - 84, '+' + perk('finHeal'), '#8bc34a'); }
   p.envFin = (e.baseZ || 0) === 0 ? envFor(e) : null;
   if (p.envFin) logEv('envfin:' + p.envFin.type);
-  p.setState('finish', FIN_END); p.fin = e; p.iframes = FIN_END + 10;
-  slowMo = Math.max(slowMo, 30); focus = { x: (p.x + e.x) / 2, y: e.y - e.h * 0.5 }; M.muffle(true);   // the world holds its breath
+  p.finMove = p.envFin ? null : pickFinMove();
+  if (p.finMove === 'classic') p.finMove = null;
+  p.finLen = p.finMove ? FIN_MOVES[p.finMove].len : FIN_END; p.finFr = null; p.finDy = 0; p.finDir = sgn(e.x - p.x) || p.face;
+  p.setState('finish', p.finLen); p.fin = e; p.iframes = p.finLen + 10;
+  slowMo = Math.max(slowMo, p.finMove ? 14 : 30); focus = { x: (p.x + e.x) / 2, y: e.y - e.h * 0.5 }; M.muffle(true);   // the world holds its breath
   if (has('whistle')) { p.hp = Math.min(p.maxhp, p.hp + 10); say(p.x, p.y - 92, '+10 BLOODLUST', '#ff5252'); }
   p.face = sgn(e.x - p.x) || p.face; p.vx = 0; p.vy = 0; p.blocking = false;
   e.finLock = true; e.vx = 0; e.hasToken = false; e.queue = [];
@@ -2584,7 +2720,15 @@ function startFinisher(p, e) {
   A.tone(200, 90, 0.1, 'square', 0.2);
 }
 function updateFinisher(p) {
-  const e = p.fin, t = FIN_END - p.f, F = FINISH[CLS];
+  const e = p.fin, t = (p.finLen || FIN_END) - p.f, F = FINISH[CLS];
+  if (p.finMove) {
+    const m = FIN_MOVES[p.finMove];
+    if (!e || (e.dead && t <= m.hit)) { p.setState('idle'); p.fin = null; p.finMove = null; p.finDy = 0; p.finFr = null; if (e) e.finPose = null; return; }   // someone else got them first
+    if (!e.dead || e.finPose) m.step(p, e, t, p.finDir, m);
+    else m.step(p, { x: 0, y: 0, h: 0, finPose: null, dead: true, t: e.t, missing: e.missing }, t, p.finDir, m);   // after the hit: just his recovery
+    if (p.f <= 0) { p.setState('idle'); p.fin = null; p.finMove = null; p.finDy = 0; p.finFr = null; if (e) e.finPose = null; }
+    return;
+  }
   if (!e || e.dead && t < FIN_HIT) { p.setState('idle'); p.fin = null; return; }
   const o = p.envFin;
   if (t < FIN_HIT && o) {                              // drag them over to the furniture
@@ -2598,28 +2742,9 @@ function updateFinisher(p) {
     vibrate(e, 2, 1);
   }
   if (t === FIN_HIT) {
-    const dir = p.face, sy = e.y - e.h * 0.55;
-    slowMo = 42; focus = { x: (p.x + e.x) / 2, y: sy, fin: o ? ENV_FIN[o.type] : F.name };
+    const dir = p.face;
     if (o) envSmash(p, e, o, dir);
-    hitStop = 6; flashScreen = 6; shake = 12; camKX += dir * 6;
-    A.crunch(1.3); A.heavy(0.8);
-    impact(e.x - dir * 6, sy, dir, true); impact(e.x - dir * 4, sy - 6, dir, true);
-    bloodSpray(e.x, sy, e.y, 26, dir, 1.6);
-    combo++; comboT = 112; if (combo > comboBest) comboBest = combo;
-    score += 250; say(e.x, e.y - e.h - 10, '+250', '#ffd23f', true);
-    if (F.slam) { ring(e.x, e.y, '#ffd23f', 6, 56); dust(e.x, e.y, 12, 0); }
-    quake(e.x, 1);
-    if (e.t.boss) {                                    // bosses take a big chunk instead
-      e.hp -= 45; e.finLock = false; e.setState('down', 60); e.poise = e.maxpoise; e.vx = dir * 6;
-      if (e.hp <= 0) killEnemy(e);
-    } else {
-      if (gore && !e.missing.has('head') && Math.random() < 0.55) sever(e, 'head', dir, true);
-      e.hp = 0; e.finLock = false; killEnemy(e);
-      if (e.rag) { e.rag.vx = dir * 7.5; e.rag.vz = F.lift; e.rag.rotV = dir * 0.35; }
-      if (e.rag && e.pendingRag) { e.rag.vx = e.pendingRag.vx; e.rag.vz = e.pendingRag.vz; e.pendingRag = null; }
-    }
-    if (roundStats) roundStats.sev++;
-    styleAdd(p.envFin ? 'env' : 'finish', p.envFin ? 45 : 35);
+    finImpact(p, e, { name: o ? ENV_FIN[o.type] : F.name, slam: F.slam });
   }
   if (p.f <= 0) { p.setState('idle'); p.fin = null; p.envFin = null; }
 }
@@ -2639,6 +2764,7 @@ function envSmash(p, e, o, dir) {
   else { A.crunch(1); dust(o.x, o.y, 10, dir); }
 }
 function finisherFrame(p) {
+  if (p.finMove) return p.finFr || 'grab';
   const t = FIN_END - p.f, F = FINISH[CLS];
   if (t < FIN_GRAB) return 'grab';
   if (t < FIN_HIT) return F.wind[Math.min(F.wind.length - 1, Math.floor((t - FIN_GRAB) / (FIN_HIT - FIN_GRAB) * F.wind.length))];
@@ -3929,7 +4055,7 @@ function stepBarks() {
     if (e.barkIn > 0 && --e.barkIn === 0) bark(e, 'in', 0.55);
     if (e.barkUp && !e.dead && e.st !== 'down' && e.st !== 'air' && e.st !== 'thrown') { e.barkUp = 0; bark(e, 'hurt', 0.5); }
     if (!e.bark) return;
-    if (e.dead || e.st === 'down' || ++e.bark.t > e.bark.life) e.bark = null;
+    if (e.dead || e.finLock || e.st === 'down' || ++e.bark.t > e.bark.life) e.bark = null;
   });
 }
 function drawBarks() {
@@ -8326,13 +8452,18 @@ function drawActorBody(a, isP) {
 
   if (isP && PF) {
     playerFrame(a); const gx = a.x + lean + (a.gaitOff || 0);
-    drawPlayerFrame(a, gx, gy + yoff, mode);
+    if (impactFrame > 0 && a.st === 'finish') mode = 'white';
+    drawPlayerFrame(a, gx, gy + yoff - (a.st === 'finish' ? (a.finDy || 0) : 0), mode);
     if (a.weapon && !['down', 'mantle', 'roll', 'cutter', 'finish'].includes(a.st)) drawHeldWeapon(a, gx, gy + yoff);
   } else if (!isP && FS[a.sprName]) {
     let push = 0;
     if (a.moveName === 'headbutt' && a.st === 'act') push = a.face * 8;
     if (a.crawl && a.st === 'act') push = a.face * 6;
     const efr = enemyFrame(a);
+    if (a.finPose && a.finLock) {                        // mid-finisher: lifted, flipped, spun
+      const fp = a.finPose, fr = FS[a.sprName] && FS[a.sprName].f[fp.fr] ? fp.fr : efr;
+      if (fp.dy < 300) drawCharFrame(a.sprName, fr, a.x, a.y - fp.dy, a.face, impactFrame > 0 ? 'white' : mode, fp.rot || 0, a.missing);
+    } else
     drawCharFrame(a.sprName, efr, a.x + lean + push + (a.gaitOff || 0), gy + yoff, a.face, mode, 0, a.missing);
   } else if (s.rig && a.st !== 'down') {
     drawRigged(s, s.rig, a.x + lean, gy + yoff, a.face, squash, stretch, mode, poseFor(a, isP));
@@ -8484,7 +8615,10 @@ function render() {
   actors.forEach(a => { const u = !a.dead && upOn(a); all.push({ y: u ? Math.max(a.y, u.y + 0.5) : a.y, a }); });
   props.forEach(o => { if (!o.gone && !o.flat) all.push({ y: o.y, o }); });
   all.sort((m, n) => m.y - n.y);
+  const imp = impactFrame > 0 && player.st === 'finish';
+  if (imp) { ctx.fillStyle = '#0b0712'; ctx.fillRect(-2000, -2000, 6000, 6000); }
   all.forEach(it => {
+    if (imp && it.a !== player && !(it.a && (it.a === player.fin))) return;
     if (it.o) { drawProp(it.o); return; }
     const a = it.a;
     if (a.baseZ > 0 && !a.dead) {
@@ -8586,6 +8720,26 @@ function render() {
     ctx.fillRect(0, 0, LW, LH);
   }
 
+  if (impactFrame > 0) impactFrame--;
+  if (speedT > 0) {                                  // speed lines rushing past the edges
+    speedT--;
+    ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1;
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2 + classTime * 0.37, r0 = 150 + ((i * 53 + classTime * 7) % 60), r1 = r0 + 40 + (i % 3) * 20;
+      ctx.beginPath(); ctx.moveTo(LW / 2 + Math.cos(a) * r0, LH / 2 + Math.sin(a) * r0 * 0.6); ctx.lineTo(LW / 2 + Math.cos(a) * r1, LH / 2 + Math.sin(a) * r1 * 0.6); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  if (player.st === 'finish' && !(focus && slowMo > 6)) {   // letterbox from the first grab
+    const k = Math.min(1, ((player.finLen || FIN_END) - player.f) / 6);
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, LW, 22 * k); ctx.fillRect(0, LH - 22 * k, LW, 22 * k);
+    if (player.finMove) {
+      const nm = FIN_MOVES[player.finMove].name, x = -120 + Math.min(1, k * 1.5) * 132;
+      ctx.font = 'bold 9px monospace'; ctx.textAlign = 'left';
+      ctx.fillStyle = CLASSES[CLS].col; ctx.fillRect(x - 6, LH - 19, ctx.measureText(nm).width + 22, 14);
+      ctx.fillStyle = '#000'; ctx.fillText('★ ' + nm, x, LH - 9);
+    }
+  }
   if (focus && slowMo > 6) {                       // cinematic bars + callout
     const k = Math.min(1, (84 - slowMo) / 8);
     ctx.fillStyle = '#000';
@@ -8903,7 +9057,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611252131', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611252318', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -9212,6 +9366,9 @@ function boot() {
     spawn: type => spawnEnemy(type),
     fin: () => ({ super: Math.round(player.super), charges: finCharges(player), st: player.st, slow: slowMo, learned: [...learned] }),
     setSuper: v => { player.super = v; },
+    finMove: k => { forceFin = k; },
+    bossInfo: () => { const e = enemies.find(e => e.t.boss && !e.crowd); return e ? { hp: Math.round(e.hp), st: e.st, dead: !!e.dead, lock: !!e.finLock, pose: !!e.finPose } : null; },
+    stunBoss: () => { const e = enemies.find(e => !e.dead && e.t.boss); if (e) { e.x = player.x + player.face * 24; e.y = player.y; e.setState('stagger', 200); } return !!e; },
     farFoe: dx => { const e = enemies.find(e => !e.dead && !e.crowd); if (e) { e.x = clamp(player.x + (player.x < (WALL_L + WALL_R) / 2 ? dx : -dx), WALL_L + 10, WALL_R - 10); e.y = player.y + 12; e.setState('stagger', 200); } },
     stunFoe: () => { const e = enemies.find(e => !e.dead && !e.crowd); if (e) { e.x = player.x + player.face * 22; e.y = player.y; e.setState('stagger', 120); } return !!e; },
     gait: () => ({ x: player.x, y: player.y, fr: playerFrame(player), off: player.gaitOff, st: player.st, d: player.stepD, cyc: strideOf(C().sheet, WALK6), run: strideOf(C().sheet, ['run0', 'run1', 'run2', 'run3']) }),
