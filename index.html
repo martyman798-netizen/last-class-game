@@ -619,7 +619,11 @@ cv.addEventListener('pointerdown', e => {
   else if (state === 'play' && pendingPicks > 0 && x > LVL_BADGE.x - 10 && x < LVL_BADGE.x + LVL_BADGE.w + 10 && y > LVL_BADGE.y - 10 && y < LVL_BADGE.y + LVL_BADGE.h + 10) treeReq = true;
 });
 function bagXY(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * LW, (e.clientY - r.top) / r.height * LH]; }
-const heldBy = e => !bagCard.held || bagCard.held.pid === e.pointerId;      // only the finger holding the item moves it
+const heldBy = e => !bagCard.held || bagCard.held.pid === e.pointerId;
+addEventListener('pointermove', e => { if (state === 'levelup' && lvlCard && !ngPlus) { const [x, y] = bagXY(e); webPtrMove(x, y, e.pointerId); } });
+addEventListener('pointerup', e => { if (state === 'levelup' && lvlCard && !ngPlus) { const [x, y] = bagXY(e); webUp(x, y, e.pointerId); } });
+addEventListener('pointercancel', e => { if (state === 'levelup' && lvlCard && lvlCard.ptrs) { delete lvlCard.ptrs[e.pointerId]; lvlCard.pinch = null; } });
+cv.addEventListener('wheel', e => { if (state === 'levelup' && lvlCard && !ngPlus) { e.preventDefault(); const [x, y] = bagXY(e); webZoom(lvlCard, e.deltaY < 0 ? 1.15 : 0.87, x, y); } }, { passive: false });      // only the finger holding the item moves it
 addEventListener('pointermove', e => { if (state === 'bag' && bagCard && heldBy(e)) { const [x, y] = bagXY(e); bagMove(x, y); } });
 addEventListener('pointerup', e => { if (state === 'bag' && bagCard && heldBy(e)) { const [x, y] = bagXY(e); bagUp(x, y); } });
 addEventListener('pointercancel', e => { if (state === 'bag' && bagCard && bagCard.held && heldBy(e)) bagUp(-1, -1); });
@@ -4157,7 +4161,7 @@ function saveCheckpoint() {
   if (round <= 0 || endlessMode || tutorial) return;
   putSlot(curSlot, { round, cls: CLS, gear: Object.assign({}, gear), score, hp: player.hp,
                               seen: [...seenLoot], styleSSS: style.sssStage, diff: SET.diff, at: Date.now(),
-                              skills: [...learned], pas: passives, lvl: level, xp, pts: pendingPicks, ng: ngPlus, bag: bag.map(b => Object.assign({}, b)) });
+                              skills: [...learned], pas: passives, lvl: level, xp, pts: pendingPicks, ng: ngPlus, web: [...webSet], bag: bag.map(b => Object.assign({}, b)) });
 }
 /* three save slots. The run you're playing saves itself into its slot at every new wave and door;
    CONTINUE picks up the newest one, LOAD GAME shows all three. */
@@ -4183,6 +4187,7 @@ function continueRun() {
   CLS = cp.cls in CLASSES ? cp.cls : CLS;
   resetGame();
   learned = new Set((cp.skills || []).concat(BASE_SKILLS)); passives = cp.pas || {}; level = cp.lvl || 1; xp = cp.xp || 0; pendingPicks = cp.pts || 0;
+  webSet = new Set(cp.web || [webStart()].concat(WEB.filter(n => n.t === 'n' && webHasSkill(n.skill)).map(n => n.id)));   // older saves: what they'd learned
   player.maxhp += skillFx('hp');
   for (const sl of SLOTS) if (cp.gear && cp.gear[sl] && ITEMS[cp.gear[sl]]) { gear[sl] = cp.gear[sl]; player.maxhp += ITEMS[gear[sl]].fx.hp || 0; }
   buildSkin();
@@ -4879,7 +4884,7 @@ function playerHit(e, mv) {
     return;
   }
   const rage = perk('rage') && p0.hp < p0.maxhp * 0.3 ? 1 + perk('rage') : 1;
-  const fury = p0.furyT > 0 ? 1.35 : 1;
+  const fury = p0.furyT > 0 ? (keystone('k_berserk') ? 1.6 : 1.35) : 1;
   const kick = mv.kick || KICKS[CLS].includes(mv.name) ? 1 + perk('kick') : 1;          // steel-toes
   const gearK = (mv.punch || (!mv.step && mv.name === 'l1') ? 1 + perk('jab') : 1) * (mv.step === 'elbow' || mv.step === 'knee' ? 1 + perk('clinch') : 1) * (mv.name === 'heavy' ? 1 + perk('heavyK') : 1) * (/^air/.test(mv.name) ? 1 + perk('airK') : 1)
               * (e.st === 'air' ? 1 + perk('juggleK') : 1) * (p0.pkT > 0 ? 1 + perk('pkK') : 1) * (p0.wkT > 0 ? 1 + perk('wkK') : 1) * (e.brokenT > 0 ? 1.5 : 1);
@@ -4990,6 +4995,7 @@ function playerHit(e, mv) {
     tanked(e, sx, sy);
     return;
   }
+  if (keystone('k_brawl') && mv.step && combo > 0 && combo % 3 === 0 && !e.t.boss && !e.crowd && !mv.knockdown) e.poise = 0;   // BRAWLER'S INSTINCT
   // keep hitting the same one and they fight their way out: shove off and get the guard up
   e.chainN = (classTime - (e.chainAt || -999) < 50 ? (e.chainN || 0) : 0) + 1; e.chainAt = classTime;
   if (!mv.knockdown && !heavyHit && e.poise > 0 && !e.crowd && e.t.role !== 'dummy' && e.st !== 'stagger' && e.chainN >= (e.t.boss || e.t.elite ? 3 : 4)) { breakOut(e); return; }
@@ -5103,6 +5109,7 @@ function hitPlayer(e, mv) {
       ring(p.x + p.face * 14, p.y - 30, '#fff', 5, 30);
       say(p.x, p.y - 60, 'PARRY!', '#4fc3f7', true); styleAdd('parry', 20); startZen(p);
       if (roundStats) roundStats.parry++;
+      if (keystone('k_second')) { p.hp = Math.min(p.maxhp, p.hp + 8); say(p.x, p.y - 84, '+8', '#8bc34a'); }
       if (perk('parryHeal')) { p.hp = Math.min(p.maxhp, p.hp + perk('parryHeal')); say(p.x, p.y - 72, '+' + perk('parryHeal'), '#8bc34a'); }
       p.super = Math.min(p.maxsuper, p.super + 26 * (1 + perk('superK')));
       p.stam = Math.min(p.maxstam, p.stam + 12);
@@ -5125,9 +5132,9 @@ function hitPlayer(e, mv) {
       return 'parry';
     }
     // normal block
-    const chip = Math.max(perk('chip') ? 0 : 1, Math.round(mv.dmg * 0.15 * (1 - perk('chip'))));
+    const chip = keystone('k_second') ? Math.round(mv.dmg * 0.3) : Math.max(perk('chip') ? 0 : 1, Math.round(mv.dmg * 0.15 * (1 - perk('chip'))));   // UNTOUCHABLE: normal blocks leak
     p.hp -= chip; dmgTaken += chip;
-    p.stam -= mv.dmg * 1.2;                            // blocking is the plan now: it shouldn't empty you in three hits
+    p.stam -= mv.dmg * 1.2 * (1 + perk('blockCost'));   // blocking is the plan now (BERSERKER: double)
     p.vx += sgn(p.x - e.x) * 2.6;
     A.block();
     hitStop = 3; shake = 2.5;
@@ -5165,6 +5172,10 @@ function hitPlayer(e, mv) {
     else { c.ref.vx = rnd(-2, 2); c.ref.vz = 1.4; }
   }
   p.hp -= dmg; dmgTaken += dmg;
+  if (keystone('k_wind') && !p.windUsed && p.hp > 0 && p.hp < p.maxhp * 0.3) {      // SECOND WIND
+    p.windUsed = true; p.hp = Math.min(p.maxhp, p.hp + 30); p.stam = p.maxstam;
+    say(p.x, p.y - 84, 'SECOND WIND', '#ffd23f', true); ring(p.x, p.y - 24, '#ffd23f', 6, 60); slowMo = Math.max(slowMo, 30);
+  }
   p.peaceT = 0;
   if (p.cad >= 5) say(p.x, p.y - 76, 'RHYTHM LOST', '#90caf9');
   p.cad = 0;
@@ -5183,7 +5194,7 @@ function hitPlayer(e, mv) {
   burst(p.x, p.y - 30, 9, '#ff5252', 2.6);
   bloodSpray(p.x, p.y - 30, p.y, dmg > 14 ? 8 : 4, sgn(p.x - e.x), dmg > 14 ? 1.2 : 0.8);
   say(p.x, p.y - 52, '-' + dmg, '#ff5252');
-  const stand = perk('unstoppable') && p.hp > p.maxhp / 2;
+  const stand = (perk('unstoppable') && p.hp > p.maxhp / 2) || keystone('k_iron');   // IRON WILL: nothing puts you down
   const pulled = p.baseZ > (e.baseZ || 0) + 4 && p.under && !stand;
   if (p.st === 'pinned') { p.iframes = 26; }                   // still held: the hit lands but he can't go anywhere
   else if ((mv.knockdown || wasAir || pulled) && !stand) { p.setState('down', 70); A.down(); }
@@ -5384,7 +5395,7 @@ function updatePlayer() {
   p.blocking = false;
   const fresh = mag > 0.55 && (p.prevMag || 0) < 0.35;
   p.prevMag = mag;
-  if (!air && wantBlock && fresh && p.stam >= 18 && has('dodge')) { startDodge(ix, iy); clearEdges(); return; }   // block + a direction = dodge
+  if (!air && wantBlock && fresh && p.stam >= 18 && has('dodge') && !keystone('k_iron')) { startDodge(ix, iy); clearEdges(); return; }   // block + a direction = dodge
   if (!air && wantBlock && p.stam > 2) {
     if (p.st !== 'block') { p.setState('block'); p.blockT = 0; }
     p.blocking = true; p.blockT++;
@@ -5676,7 +5687,7 @@ function startChain(kind, threat, air) {
   p.hitLanded = false;
   p.canCancel = false;
   p.setState('attack', mv.wind + mv.act + mv.rec);
-  p.stam -= p.zenT > 0 ? 0 : mv.stam * (C().stamK || 1);
+  p.stam -= p.zenT > 0 ? 0 : mv.stam * (C().stamK || 1) * (keystone('k_brawl') && mv.step ? 1.3 : 1);
   p.vx += p.face * (mv.travel ? mv.travel * (1 + (mv.charged || 0) * 0.4)
                    : mv.name === 'heavy' ? 2.2 * (1 + (mv.charged || 0)) : mv.name === 'l3' ? 3.2
                    : mv.name === 'dash' ? 4 : air ? 0.6 : 1.5);
@@ -5763,6 +5774,7 @@ function checkPerfect(p, how) {
   witchT = Math.round((absurd('bullet') ? 300 : 100) * (1 + perk('witchK')));
   p.iframes = Math.max(p.iframes, 24);
   say(p.x, p.y - 70, 'PERFECT DODGE', '#9fd0ff', true); startZen(p);
+  if (keystone('k_second')) p.hp = Math.min(p.maxhp, p.hp + 8);
   p.super = Math.min(p.maxsuper, p.super + 14 * (1 + perk('superK')));
   ring(p.x, p.y - 20, '#9fd0ff', 6, 70); flashScreen = 5;
   A.tone(1400, 300, 0.4, 'sine', 0.16); A.tone(700, 150, 0.4, 'triangle', 0.1, 0.05);
@@ -6826,7 +6838,7 @@ function afterClear() {
     M.play('title');
   } else if (stageOf(round) !== stageOf(round - 1)) {
     state = 'stage'; stateT = 0;                       // walk to the next place
-    player.revived = false;
+    player.revived = false; player.windUsed = false;      // SECOND WIND comes back each area
     M.play('title');
   } else {
     state = 'play'; stateT = 0;
@@ -7901,6 +7913,7 @@ const syn = name => SYNERGIES.some(s => s[2] === name && learned.has(s[0]) && le
 const xpNeed = L => 60 + (L - 1) * 65;
 function skillFx(key) {
   let v = 0;
+  if (!ngPlus) for (const id of webSet) { const n = WEBI[id]; if (n && n.t !== 'n' && n.fx && n.fx[key]) v += n.fx[key]; }
   for (const id in passives) if (PASSIVES[id].fx[key]) v += PASSIVES[id].fx[key] * passives[id];
   for (const id in ABSURD) if (ABSURD[id].fx && ABSURD[id].fx[key] && learned.has(id)) v += ABSURD[id].fx[key];
   return v;
@@ -7908,6 +7921,7 @@ function skillFx(key) {
 const BASE_SKILLS = ['grab', 'parry', 'finisher', 'heavy', 'air'];      // everyone walks in knowing these
 function initSkills() {
   learned = new Set(BASE_SKILLS); passives = {}; level = 1; xp = 0; pendingPicks = 0; lvlCard = null;
+  webSet = new Set([webStart()]); webLearn.said = 0;
   if (ngPlus) TREE.forEach(n => { if (STYLE_OF[n[0]] && STYLE_OF[n[0]] !== leanStyle()) return; if (PASSIVES[n[0]]) passives[n[0]] = 1; else learned.add(n[0]); });
 }
 function lockedHint(what) {
@@ -7919,7 +7933,7 @@ function gainXP(n) {
   if (!progression() || state === 'title') return;
   xp += n;
   while (xp >= xpNeed(level)) {
-    xp -= xpNeed(level); level++; pendingPicks++; autoTree = true;
+    xp -= xpNeed(level); level++; pendingPicks += ngPlus ? 1 : 2; autoTree = true;
     A.rank(); ring(player.x, player.y - 24, '#b388ff', 6, 46);
     lvlBanner = { t: 0, lv: level };
     ring(player.x, player.y - 24, '#ffd23f', 4, 70); burst(player.x, player.y - 30, 24, '#b388ff', 3.2); burst(player.x, player.y - 30, 12, '#ffd23f', 2.4);
@@ -7942,6 +7956,185 @@ const TREE = [
   ['grab', 3, 0, 0, []], ['parry', 3, 1, 0, []], ['dodge', 3, 2, 0, []], ['weapons', 3, 0, 1, ['grab']], ['skin', 3, 1, 1, ['parry']],
   ['dash', 3, 2, 1, ['dodge']], ['heart', 3, 0, 2, ['weapons']], ['whistle', 3, 1, 2, ['skin']], ['sprint', 3, 2, 2, ['dash']], ['cardio', 3, 2, 3, ['sprint']]
 ];
+/*WEB_DATA*/
+const WEB = [{"id":"h0","x":0.0,"y":-78.0,"t":"s","fx":{"hp":5}},{"id":"h1","x":67.5,"y":-39.0,"t":"s","fx":{"tough":0.02}},{"id":"h2","x":67.5,"y":39.0,"t":"s","fx":{"hp":5}},{"id":"h3","x":0.0,"y":78.0,"t":"s","fx":{"tough":0.02}},{"id":"h4","x":-67.5,"y":39.0,"t":"s","fx":{"hp":5}},{"id":"h5","x":-67.5,"y":-39.0,"t":"s","fx":{"tough":0.02}},{"id":"heart_n","x":0,"y":0,"t":"n","skill":"heart"},{"id":"start_yoga","x":0.0,"y":-150.0,"t":"c","cls":"yoga"},{"id":"start_bb","x":-129.9,"y":75.0,"t":"c","cls":"bb"},{"id":"start_cyc","x":129.9,"y":75.0,"t":"c","cls":"cyc"},{"id":"box_s0","x":-193.0,"y":34.0,"t":"s","fx":{"jab":0.05}},{"id":"box1_n","x":-197.5,"y":8.4,"t":"n","skill":"box1","req":null},{"id":"box_s1","x":-234.4,"y":41.3,"t":"s","fx":{"jab":0.05}},{"id":"box2_n","x":-229.9,"y":66.9,"t":"n","skill":"box2","req":"box1"},{"id":"box_s2","x":-275.7,"y":48.6,"t":"s","fx":{"stam":0.1}},{"id":"handspd_n","x":-280.2,"y":23.0,"t":"n","skill":"handspd","req":"box2"},{"id":"box_s3","x":-317.1,"y":55.9,"t":"s","fx":{"jab":0.05}},{"id":"box3_n","x":-312.6,"y":81.5,"t":"n","skill":"box3","req":"handspd"},{"id":"box_s4","x":-358.5,"y":63.2,"t":"s","fx":{"jab":0.05}},{"id":"k_glass","x":-405.7,"y":71.5,"t":"k","name":"GLASS JAW","desc":"+40% damage. you take 25% more.","fx":{"dmg":0.4,"tough":-0.25}},{"id":"kick_s0","x":-60.6,"y":-186.4,"t":"s","fx":{"kick":0.05}},{"id":"kick1_n","x":-35.9,"y":-194.4,"t":"n","skill":"kick1","req":null},{"id":"kick_s1","x":-73.5,"y":-226.4,"t":"s","fx":{"kick":0.05}},{"id":"kick2_n","x":-98.2,"y":-218.4,"t":"n","skill":"kick2","req":"kick1"},{"id":"kick_s2","x":-86.5,"y":-266.3,"t":"s","fx":{"reach":3}},{"id":"legs_n","x":-61.8,"y":-274.3,"t":"n","skill":"legs","req":"kick2"},{"id":"kick_s3","x":-99.5,"y":-306.2,"t":"s","fx":{"kick":0.05}},{"id":"kick3_n","x":-124.2,"y":-298.2,"t":"n","skill":"kick3","req":"legs"},{"id":"kick_s4","x":-112.5,"y":-346.2,"t":"s","fx":{"kick":0.05}},{"id":"k_wind","x":-127.3,"y":-391.8,"t":"k","name":"SECOND WIND","desc":"once per area, dropping under 30% health heals 30 and refills stamina. -15 max health.","fx":{"hp":-15}},{"id":"mix_s0","x":193.0,"y":34.0,"t":"s","fx":{"dmg":0.03}},{"id":"mix1_n","x":188.5,"y":59.6,"t":"n","skill":"mix1","req":null},{"id":"mix_s1","x":234.4,"y":41.3,"t":"s","fx":{"dmg":0.03}},{"id":"mix2_n","x":238.9,"y":15.7,"t":"n","skill":"mix2","req":"mix1"},{"id":"mix_s2","x":275.7,"y":48.6,"t":"s","fx":{"clinch":0.1}},{"id":"flow_n","x":271.2,"y":74.2,"t":"n","skill":"flow","req":"mix2"},{"id":"mix_s3","x":317.1,"y":55.9,"t":"s","fx":{"dmg":0.03}},{"id":"mix3_n","x":321.6,"y":30.3,"t":"n","skill":"mix3","req":"flow"},{"id":"mix_s4","x":358.5,"y":63.2,"t":"s","fx":{"dmg":0.03}},{"id":"k_brawl","x":405.7,"y":71.5,"t":"k","name":"BRAWLER'S INSTINCT","desc":"every third hit of a combo staggers them. combos cost 30% more stamina.","fx":{}},{"id":"hvy_s0","x":0.0,"y":150.0,"t":"s","fx":{"heavyK":0.06}},{"id":"protein_n","x":-26.0,"y":150.0,"t":"n","skill":"protein","req":null},{"id":"hvy_s1","x":0.0,"y":192.0,"t":"s","fx":{"heavyK":0.06}},{"id":"charge_n","x":26.0,"y":192.0,"t":"n","skill":"charge","req":null},{"id":"hvy_s2","x":0.0,"y":234.0,"t":"s","fx":{"furyK":0.1}},{"id":"launch_n","x":-26.0,"y":234.0,"t":"n","skill":"launch","req":null},{"id":"hvy_s3","x":0.0,"y":276.0,"t":"s","fx":{"heavyK":0.06}},{"id":"quake_n","x":26.0,"y":276.0,"t":"n","skill":"quake","req":"charge"},{"id":"hvy_s4","x":0.0,"y":318.0,"t":"s","fx":{"heavyK":0.06}},{"id":"k_iron","x":0.0,"y":366.0,"t":"k","name":"IRON WILL","desc":"nothing knocks you down. you can not dodge.","fx":{"tough":0.05}},{"id":"temper_n","x":30.0,"y":234.0,"t":"n","skill":"temper","req":null},{"id":"air_s0","x":70.4,"y":-132.4,"t":"s","fx":{"airK":0.06}},{"id":"hang_n","x":93.4,"y":-120.2,"t":"n","skill":"hang","req":null},{"id":"air_s1","x":90.1,"y":-169.5,"t":"s","fx":{"airK":0.06}},{"id":"parkour_n","x":67.1,"y":-181.7,"t":"n","skill":"parkour","req":null},{"id":"air_s2","x":109.9,"y":-206.6,"t":"s","fx":{"speed":0.04}},{"id":"wallkick_n","x":132.9,"y":-194.4,"t":"n","skill":"wallkick","req":"parkour"},{"id":"air_s3","x":129.6,"y":-243.7,"t":"s","fx":{"airK":0.06}},{"id":"dfa_n","x":106.6,"y":-255.9,"t":"n","skill":"dfa","req":null},{"id":"air_s4","x":149.3,"y":-280.8,"t":"s","fx":{"airK":0.06}},{"id":"k_berserk","x":171.8,"y":-323.2,"t":"k","name":"BERSERKER","desc":"fury fills twice as fast and hits 25% harder. blocking costs double stamina.","fx":{"furyK":1,"blockCost":1}},{"id":"cutter_n","x":83.4,"y":-220.7,"t":"n","skill":"cutter","req":null},{"id":"def_s0","x":-129.9,"y":-75.0,"t":"s","fx":{"tough":0.03}},{"id":"skin_n","x":-116.9,"y":-97.5,"t":"n","skill":"skin","req":null},{"id":"def_s1","x":-166.3,"y":-96.0,"t":"s","fx":{"parry":2}},{"id":"dodge_n","x":-179.3,"y":-73.5,"t":"n","skill":"dodge","req":null},{"id":"def_s2","x":-202.6,"y":-117.0,"t":"s","fx":{"witchK":0.2}},{"id":"dash_n","x":-189.6,"y":-139.5,"t":"n","skill":"dash","req":"dodge"},{"id":"def_s3","x":-239.0,"y":-138.0,"t":"s","fx":{"tough":0.03}},{"id":"whistle_n","x":-252.0,"y":-115.5,"t":"n","skill":"whistle","req":null},{"id":"def_s4","x":-275.4,"y":-159.0,"t":"s","fx":{"stam":0.1}},{"id":"k_second","x":-317.0,"y":-183.0,"t":"k","name":"UNTOUCHABLE","desc":"a much wider parry window, and perfect parries and dodges heal 8. normal blocks let 30% through.","fx":{"parry":4}},{"id":"weapons_n","x":-151.3,"y":-122.0,"t":"n","skill":"weapons","req":null},{"id":"sprint_n","x":-224.0,"y":-164.0,"t":"n","skill":"sprint","req":"dash"},{"id":"cardio_n","x":-288.4,"y":-136.5,"t":"n","skill":"cardio","req":null}];
+const WEB_LINKS = [["air_s0","air_s1"],["air_s0","h1"],["air_s0","hang_n"],["air_s0","start_cyc"],["air_s0","start_yoga"],["air_s1","air_s2"],["air_s1","parkour_n"],["air_s2","air_s3"],["air_s2","cutter_n"],["air_s2","wallkick_n"],["air_s3","air_s4"],["air_s3","dfa_n"],["air_s4","k_berserk"],["box1_n","box_s0"],["box2_n","box_s1"],["box3_n","box_s3"],["box_s0","box_s1"],["box_s0","start_bb"],["box_s1","box_s2"],["box_s2","box_s3"],["box_s2","handspd_n"],["box_s3","box_s4"],["box_s4","k_glass"],["cardio_n","def_s4"],["charge_n","hvy_s1"],["dash_n","def_s2"],["def_s0","def_s1"],["def_s0","h5"],["def_s0","skin_n"],["def_s0","start_bb"],["def_s0","start_yoga"],["def_s1","def_s2"],["def_s1","dodge_n"],["def_s1","weapons_n"],["def_s2","def_s3"],["def_s3","def_s4"],["def_s3","sprint_n"],["def_s3","whistle_n"],["def_s4","k_second"],["flow_n","mix_s2"],["h0","h1"],["h0","h5"],["h0","start_yoga"],["h1","h2"],["h1","heart_n"],["h2","h3"],["h2","start_cyc"],["h3","h4"],["h3","heart_n"],["h3","hvy_s0"],["h4","h5"],["h4","start_bb"],["h5","heart_n"],["hvy_s0","hvy_s1"],["hvy_s0","protein_n"],["hvy_s0","start_bb"],["hvy_s0","start_cyc"],["hvy_s1","hvy_s2"],["hvy_s2","hvy_s3"],["hvy_s2","launch_n"],["hvy_s2","temper_n"],["hvy_s3","hvy_s4"],["hvy_s3","quake_n"],["hvy_s4","k_iron"],["k_brawl","mix_s4"],["k_wind","kick_s4"],["kick1_n","kick_s0"],["kick2_n","kick_s1"],["kick3_n","kick_s3"],["kick_s0","kick_s1"],["kick_s0","start_yoga"],["kick_s1","kick_s2"],["kick_s2","kick_s3"],["kick_s2","legs_n"],["kick_s3","kick_s4"],["mix1_n","mix_s0"],["mix2_n","mix_s1"],["mix3_n","mix_s3"],["mix_s0","mix_s1"],["mix_s0","start_cyc"],["mix_s1","mix_s2"],["mix_s2","mix_s3"],["mix_s3","mix_s4"]];
+/*END_WEB_DATA*/
+/* ======================= THE SKILL WEB =======================
+   One constellation for everyone, each class starting on its own side of it (yoga by KICKS,
+   the bodybuilder by BOXING, spin by MIX). Small nodes are stepping stones (+5% this, +4 that),
+   notables are the moves and perks, keystones out on the tips change the rules - at a price.
+   You can only take a node next to one you have. Two points a level. */
+const WEBI = {}; WEB.forEach((n, i) => { n.i = i; WEBI[n.id] = n; });
+const WEB_ADJ = {}; WEB_LINKS.forEach(([a, b]) => { (WEB_ADJ[a] = WEB_ADJ[a] || []).push(b); (WEB_ADJ[b] = WEB_ADJ[b] || []).push(a); });
+let webSet = new Set();
+const webStart = () => 'start_' + CLS;
+const keystone = id => progression() && webSet.has(id);
+const webHasSkill = sk => learned.has(sk) || !!passives[sk];
+function webLocked(n) { return n.t === 'n' && STYLE_OF[n.skill] && styleOf() && styleOf() !== STYLE_OF[n.skill]; }
+function webReady(n) {
+  if (webSet.has(n.id) || n.id === webStart()) return false;          // other classes' starts are just stepping stones
+  if (!(WEB_ADJ[n.id] || []).some(a => webSet.has(a))) return false;
+  if (n.req && !webHasSkill(n.req)) return false;
+  return !webLocked(n);
+}
+function webInfo(n) {                                     // name / kind / what it does / how
+  if (n.t === 'k') return { name: n.name, kind: 'KEYSTONE', desc: n.desc };
+  if (n.t === 'c') return { name: CLASSES[n.cls].name, kind: 'CLASS START', desc: 'where the ' + CLASSES[n.cls].name.toLowerCase() + ' starts.' };
+  if (n.t === 'n') { const d = nodeDef(n.skill); return { name: d.n, kind: SKILLS[n.skill] ? 'NEW MOVE' : 'NOTABLE', desc: d.desc, how: d.how }; }
+  const LBL = { jab: ['PUNCHES', '%'], kick: ['KICKS', '%'], dmg: ['DAMAGE', '%'], hp: ['MAX HEALTH', ''], tough: ['DAMAGE TAKEN -', '%'], stam: ['STAMINA REGEN', '%'],
+                reach: ['KICK REACH', ''], clinch: ['ELBOWS & KNEES', '%'], heavyK: ['HEAVY DAMAGE', '%'], furyK: ['FURY GAIN', '%'], airK: ['AIR DAMAGE', '%'],
+                speed: ['SPEED', '%'], parry: ['PARRY WINDOW', ' frames'], witchK: ['SLOW-MO AFTER A PERFECT DODGE', '%'] };
+  const [k, v] = Object.entries(n.fx)[0], [lbl, unit] = LBL[k] || [k.toUpperCase(), ''];
+  const num = unit === '%' ? Math.round(Math.abs(v) * 100) : v;
+  return { name: (lbl.endsWith('-') ? lbl : '+' + num + unit + ' ' + lbl).replace('- ', '-' + num + unit + ' ').replace(/ -$/, ''), kind: 'SMALL', desc: 'a step along the way.' };
+}
+function webLearn(n) {
+  if (!webReady(n) || pendingPicks <= 0) { A.tone(200, 150, 0.1, 'square', 0.08); return false; }
+  pendingPicks--; webSet.add(n.id);
+  if (n.t === 'n') learnNode(n.skill);
+  if (n.t === 'k') { learned.add(n.id); banner = { a: n.name, b: n.desc, t: 200 }; logEv('keystone:' + n.id); }
+  if (n.fx && n.fx.hp) { player.maxhp += n.fx.hp; player.hp = Math.max(1, Math.min(player.maxhp, player.hp + Math.max(0, n.fx.hp))); }
+  if (n.t === 'n' && STYLE_OF[n.skill] && !webLearn.said) { webLearn.said = 1; banner = { a: 'YOU FIGHT ' + STYLES[STYLE_OF[n.skill]].n, b: 'for the rest of this run', t: 150 }; }
+  logEv('web:' + n.id); A.rank(); flashScreen = 4; lvlCard.pulse = 20;
+  saveCheckpoint();
+  return true;
+}
+function webOpen() {
+  const st = WEBI[webStart()] || WEB[0];
+  const ready = WEB.filter(webReady).sort((a, b) => Math.hypot(a.x - st.x, a.y - st.y) - Math.hypot(b.x - st.x, b.y - st.y));
+  const sel = (ready[0] || st).i;
+  lvlCard = { sel, t: 0, camX: WEB[sel].x, camY: WEB[sel].y, zoom: 0.8, ptrs: {}, drag: null };
+  state = 'levelup'; stateT = 0; M.muffle(true); A.round();
+}
+const WEB_VIEW = { x: 8, y: 36, w: 464, h: 174 };
+const webScr = (c, n) => [WEB_VIEW.x + WEB_VIEW.w / 2 + (n.x - c.camX) * c.zoom, WEB_VIEW.y + WEB_VIEW.h / 2 + (n.y - c.camY) * c.zoom];
+const webBtns = () => ({ plus: { x: 446, y: 40, w: 22, h: 16 }, minus: { x: 446, y: 60, w: 22, h: 16 }, home: { x: 446, y: 80, w: 22, h: 16 } });
+function webZoom(c, k, fx, fy) {                           // zoom about a point on screen
+  const z0 = c.zoom, z1 = clamp(z0 * k, 0.45, 2.2); if (z1 === z0) return;
+  const cx = WEB_VIEW.x + WEB_VIEW.w / 2, cy = WEB_VIEW.y + WEB_VIEW.h / 2;
+  fx = fx == null ? cx : fx; fy = fy == null ? cy : fy;
+  const wx = c.camX + (fx - cx) / z0, wy = c.camY + (fy - cy) / z0;
+  c.zoom = z1; c.camX = wx - (fx - cx) / z1; c.camY = wy - (fy - cy) / z1;
+}
+function webSelect(i) { const c = lvlCard; c.sel = i; c.follow = 14; A.tele(); }
+function webMove(dx, dy) {                                 // keyboard: hop to the nearest node that way
+  const c = lvlCard, cur = WEB[c.sel];
+  let best = -1, bd = 1e9;
+  WEB.forEach((n, i) => {
+    if (i === c.sel) return;
+    const ddx = n.x - cur.x, ddy = n.y - cur.y, along = dx ? ddx * dx : ddy * dy, across = dx ? Math.abs(ddy) : Math.abs(ddx);
+    if (along <= 2) return;
+    const linked = (WEB_ADJ[cur.id] || []).includes(n.id);
+    const d = along + across * 2.2 - (linked ? 30 : 0);
+    if (d < bd) { bd = d; best = i; }
+  });
+  if (best >= 0) webSelect(best);
+}
+function webUpdate() {
+  const c = lvlCard; c.t++; if (c.pulse) c.pulse--;
+  if (c.follow > 0) { c.follow--; const n = WEB[c.sel]; c.camX += (n.x - c.camX) * 0.25; c.camY += (n.y - c.camY) * 0.25; }
+  for (const k of menuQ.splice(0)) {
+    if (k === 'a' || k === 'arrowleft') webMove(-1, 0);
+    else if (k === 'd' || k === 'arrowright') webMove(1, 0);
+    else if (k === 'w' || k === 'arrowup') webMove(0, -1);
+    else if (k === 's' || k === 'arrowdown') webMove(0, 1);
+    else if (k === '=' || k === '+' || k === 'e') webZoom(c, 1.25);
+    else if (k === '-' || k === 'q') webZoom(c, 0.8);
+    else if (k === 'c') { const st = WEBI[webStart()]; if (st) webSelect(st.i); }
+    else if ((k === ' ' || k === 'enter' || k === 'j') && c.t > 20) { if (webLearn(WEB[c.sel]) && pendingPicks > 0) { const nx = WEB.filter(webReady).sort((a, b) => Math.hypot(a.x - WEB[c.sel].x, a.y - WEB[c.sel].y) - Math.hypot(b.x - WEB[c.sel].x, b.y - WEB[c.sel].y))[0]; if (nx) webSelect(nx.i); } }
+    else if ((k === 'k' || k === 'l' || k === 't') && c.t > 10) { closeTree(); return; }
+  }
+  clearEdges(); eat(['space', 'enter', 'j', 'k', 'l']);
+}
+// pointer: drag to pan, pinch to zoom, tap to pick, tap again to learn
+function webDown(x, y, id) {
+  const c = lvlCard; if (!c) return;
+  const inR = r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h, d = treeDone(), b = webBtns();
+  if (inR(d)) { closeTree(); return; }
+  if (inR(b.plus)) { webZoom(c, 1.3); return; } if (inR(b.minus)) { webZoom(c, 0.77); return; }
+  if (inR(b.home)) { const st = WEBI[webStart()]; if (st) webSelect(st.i); return; }
+  if (!inR(WEB_VIEW)) return;
+  c.ptrs[id] = { x, y, x0: x, y0: y };
+  const ids = Object.keys(c.ptrs);
+  if (ids.length === 2) { const [p, q] = ids.map(k => c.ptrs[k]); c.pinch = { d: Math.hypot(p.x - q.x, p.y - q.y), z: c.zoom }; }
+}
+function webPtrMove(x, y, id) {
+  const c = lvlCard; if (!c || !c.ptrs[id]) return;
+  const pt = c.ptrs[id], dx = x - pt.x, dy = y - pt.y; pt.x = x; pt.y = y;
+  const ids = Object.keys(c.ptrs);
+  if (ids.length >= 2 && c.pinch) { const [p, q] = ids.slice(0, 2).map(k => c.ptrs[k]); const dd = Math.hypot(p.x - q.x, p.y - q.y);
+    webZoom(c, (c.pinch.z * dd / Math.max(1, c.pinch.d)) / c.zoom, (p.x + q.x) / 2, (p.y + q.y) / 2); pt.moved = true; return; }
+  if (Math.hypot(x - pt.x0, y - pt.y0) > 4) pt.moved = true;
+  if (pt.moved) { c.camX -= dx / c.zoom; c.camY -= dy / c.zoom; c.follow = 0; }
+}
+function webUp(x, y, id) {
+  const c = lvlCard; if (!c || !c.ptrs[id]) return;
+  const pt = c.ptrs[id]; delete c.ptrs[id];
+  if (Object.keys(c.ptrs).length < 2) c.pinch = null;
+  if (pt.moved || c.t < 12) return;
+  let best = -1, bd = 14;
+  WEB.forEach((n, i) => { const [sx, sy] = webScr(c, n), d = Math.hypot(sx - x, sy - y); if (d < bd) { bd = d; best = i; } });
+  if (best < 0) return;
+  if (best === c.sel && c.t > 20) webLearn(WEB[best]); else { c.sel = best; A.tele(); }
+}
+function webDraw() {
+  const c = lvlCard, sel = WEB[c.sel], touch = isTouch() && !GP.active;
+  ctx.fillStyle = 'rgba(12,8,24,.97)'; ctx.fillRect(0, 0, LW, LH);
+  ctx.textAlign = 'left'; ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#b388ff'; ctx.fillText('SKILL WEB', 10, 20);
+  ctx.font = 'bold 8px monospace'; ctx.fillStyle = pendingPicks ? '#ffd23f' : '#6b6388';
+  ctx.fillText('LEVEL ' + level + '   ' + (pendingPicks ? pendingPicks + ' POINT' + (pendingPicks > 1 ? 'S' : '') + ' TO SPEND' : 'no points - keep fighting'), 100, 20);
+  if (styleOf()) { ctx.fillStyle = STYLES[styleOf()].col; ctx.fillText('STYLE: ' + STYLES[styleOf()].n, 300, 20); }
+  const d = treeDone();
+  ctx.fillStyle = '#3a3150'; ctx.fillRect(d.x, d.y, d.w, d.h); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 7px monospace';
+  ctx.fillText(touch ? 'DONE' : 'DONE [' + btn('k') + ']', d.x + d.w / 2, d.y + 11);
+  // the web
+  const V = WEB_VIEW;
+  ctx.fillStyle = '#100b1f'; ctx.fillRect(V.x, V.y, V.w, V.h);
+  ctx.save(); ctx.beginPath(); ctx.rect(V.x, V.y, V.w, V.h); ctx.clip();
+  const pulse = (c.t >> 4) % 2;
+  WEB_LINKS.forEach(([a, b]) => {
+    const A_ = WEBI[a], B_ = WEBI[b], ha = webSet.has(a), hb = webSet.has(b);
+    const [x1, y1] = webScr(c, A_), [x2, y2] = webScr(c, B_);
+    ctx.strokeStyle = ha && hb ? '#ffd23f' : (ha && webReady(B_)) || (hb && webReady(A_)) ? '#9f8fd0' : '#2e2648';
+    ctx.lineWidth = ha && hb ? 2 : 1; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  });
+  const z = c.zoom;
+  WEB.forEach((n, i) => {
+    const [x, y] = webScr(c, n); if (x < V.x - 20 || x > V.x + V.w + 20 || y < V.y - 20 || y > V.y + V.h + 20) return;
+    const got = webSet.has(n.id), ready = webReady(n), locked = webLocked(n);
+    const r = (n.t === 's' ? 3 : n.t === 'n' ? 5.5 : n.t === 'k' ? 8 : 7) * Math.max(0.8, Math.min(1.4, z));
+    let col = n.t === 'k' ? '#ffd23f' : n.t === 'c' ? (n.cls === CLS ? '#ff6b35' : '#6b4a3a') : n.t === 'n' ? (STYLE_OF[n.skill] ? STYLES[STYLE_OF[n.skill]].col : '#b388ff') : '#9e94c0';
+    ctx.globalAlpha = got || ready ? 1 : locked ? 0.25 : 0.45;
+    ctx.fillStyle = got ? col : '#100b1f'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    ctx.strokeStyle = ready && pendingPicks && pulse ? '#fff' : col; ctx.lineWidth = n.t === 'k' ? 2 : 1.4; ctx.stroke();
+    if (n.t === 'k') { ctx.beginPath(); ctx.arc(x, y, r + 3, 0, 7); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+    if (i === c.sel) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, r + 5, 0, 7); ctx.stroke(); }
+    if ((n.t === 'n' || n.t === 'k') && (z >= 0.75 || i === c.sel)) {
+      const info = webInfo(n); ctx.font = (n.t === 'k' ? 'bold ' : '') + '6px monospace'; ctx.textAlign = 'center';
+      ctx.fillStyle = got ? '#fff' : ready ? '#d1c4e9' : '#5e5680'; ctx.fillText(info.name, x, y + r + 8);
+    }
+  });
+  ctx.restore();
+  // zoom buttons
+  const B = webBtns();
+  [['plus', '+'], ['minus', '-'], ['home', 'O']].forEach(([k, t]) => { const r = B[k]; ctx.fillStyle = '#2a2140'; ctx.fillRect(r.x, r.y, r.w, r.h); ctx.fillStyle = '#d1c4e9'; ctx.textAlign = 'center'; ctx.font = 'bold 9px monospace'; ctx.fillText(t, r.x + r.w / 2, r.y + 12); });
+  if (!touch) { ctx.font = '6px monospace'; ctx.fillStyle = '#5a5278'; ctx.textAlign = 'left'; ctx.fillText('ARROWS: MOVE   Q / E: ZOOM   C: BACK TO START   MOUSE: DRAG + WHEEL', 12, 208); }
+  else { ctx.font = '6px monospace'; ctx.fillStyle = '#5a5278'; ctx.textAlign = 'left'; ctx.fillText('DRAG TO LOOK AROUND - PINCH TO ZOOM - TAP A NODE, TAP AGAIN TO LEARN', 12, 208); }
+  // the selected node
+  const info = webInfo(sel), got = webSet.has(sel.id), ready = webReady(sel), y0 = 214;
+  ctx.fillStyle = '#1b1530'; ctx.fillRect(8, y0, LW - 16, 50);
+  ctx.textAlign = 'left'; ctx.font = 'bold 6px monospace'; ctx.fillStyle = sel.t === 'k' ? '#ffd23f' : '#b388ff'; ctx.fillText(info.kind, 14, y0 + 10);
+  ctx.font = 'bold 9px monospace'; ctx.fillStyle = '#fff'; ctx.fillText(info.name, 14, y0 + 21);
+  ctx.font = '7px monospace'; ctx.fillStyle = '#d1c4e9'; wrapText(info.desc, 14, y0 + 32, info.how ? 200 : 300, 8);
+  if (info.how) { ctx.font = 'bold 6px monospace'; ctx.fillStyle = '#ffd23f'; ctx.fillText('HOW', 226, y0 + 10); ctx.font = '7px monospace'; ctx.fillStyle = '#fff3c4'; wrapText(info.how, 246, y0 + 10, 140, 8); }
+  ctx.textAlign = 'right'; ctx.font = 'bold 7px monospace';
+  ctx.fillStyle = got ? '#8bc34a' : ready && pendingPicks ? '#ffd23f' : '#6b6388';
+  ctx.fillText(got ? (sel.t === 'c' ? 'YOU START HERE' : 'LEARNED') : webLocked(sel) ? 'NOT YOUR STYLE' : sel.req && !webHasSkill(sel.req) ? 'NEEDS ' + nodeDef(sel.req).n
+    : !ready ? 'NOT CONNECTED YET' : pendingPicks ? (touch ? 'TAP AGAIN TO LEARN' : 'LEARN [' + btn(' ') + ']') : 'NO POINTS', LW - 14, y0 + 44);
+  ctx.textAlign = 'left';
+}
 const ABS_TREE = [
   ['gigafist', 0, 0, 0, []], ['stylengine', 0, 1, 1, ['gigafist']], ['tornado', 0, 0, 2, ['stylengine']], ['vampire', 0, 1, 3, ['tornado']],
   ['magnet', 1, 0, 0, []], ['explode', 1, 1, 1, ['magnet']], ['wmaster', 1, 0, 2, ['explode']], ['ironskin', 1, 1, 3, ['wmaster']],
@@ -7962,6 +8155,7 @@ let treeReq = false, autoTree = false, calmT = 0, lvlBanner = null;
 const LVL_BADGE = { x: 212, y: 26, w: 116, h: 16 };
 function openLevelUp() { openTree(); }
 function openTree() {
+  if (!ngPlus) { webOpen(); return; }
   const T0 = curTree();
   let sel = T0.findIndex(n => nodeReady(n)); if (sel < 0) sel = 0;
   lvlCard = { sel, t: 0, tab: T0[sel][1] };
@@ -8011,6 +8205,7 @@ function treeMove(dx, dy) {
   else if (dx) treeTab(dx);                                // off the edge: the next tab
 }
 function updateLevelUp() {
+  if (!ngPlus) { webUpdate(); return; }
   const c = lvlCard; c.t++; if (c.pulse) c.pulse--;
   const T0 = curTree();
   for (const k of menuQ.splice(0)) {
@@ -8026,6 +8221,7 @@ function updateLevelUp() {
 }
 const treeDone = () => ({ x: LW - 78, y: 8, w: 68, h: 16 });
 function levelUpTap(x, y) {
+  if (!ngPlus) { webDown(x, y, lastPid); return; }
   const c = lvlCard; if (!c) return;
   const d = treeDone();
   if (x >= d.x && x <= d.x + d.w && y >= d.y && y <= d.y + d.h) { closeTree(); return; }
@@ -8058,6 +8254,7 @@ function bossBreak(e) {
   A.round(); styleAdd('break', 40); logEv('bossbreak');
 }
 function drawLevelUp() {
+  if (!ngPlus) { webDraw(); return; }
   const c = lvlCard, T0 = curTree(), BR = ngPlus ? ABS_BRANCHES : BRANCHES;
   ctx.fillStyle = 'rgba(12,8,24,.95)'; ctx.fillRect(0, 0, LW, LH);
   ctx.textAlign = 'left'; ctx.font = 'bold 12px monospace'; ctx.fillStyle = ngPlus ? '#ff4fa3' : '#b388ff';
@@ -9826,7 +10023,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611262030', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611262257', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -10152,10 +10349,14 @@ function boot() {
     bagInfo: () => ({ msg: bagCard && bagCard.msg && bagCard.msg.txt, held: bagCard && bagCard.held && bagCard.held.id, bag: bag.map(b => b.id), cells: bag.map(b => [b.id, b.x, b.y, b.r]), gear: Object.assign({}, gear), state, xp, level, sel: bagCard && bagCard.sel, card: !!bagCard, paused: !!paused }),
     stageGo: () => { const r = ROUNDS.findIndex(q => (q.stage || 1) === 2); round = r; state = 'stage'; stateT = 0; },
     pauseItem: name => { if (!paused) togglePause(); pauseSel = PAUSE_ITEMS.indexOf(name); },
+    webState: () => ({ set: [...webSet], ready: WEB.filter(webReady).map(n => n.id), pts: pendingPicks, sel: lvlCard && WEB[lvlCard.sel] && WEB[lvlCard.sel].id, zoom: lvlCard && lvlCard.zoom, cam: lvlCard && [Math.round(lvlCard.camX), Math.round(lvlCard.camY)] }),
+    webTake: (...ids) => ids.map(id => { pendingPicks++; if (!lvlCard) lvlCard = { pulse: 0 }; return webLearn(WEBI[id]); }),
+    webScreen: id => { const c = lvlCard, n = WEBI[id]; return c && n ? webScr(c, n) : null; },
     treeState: () => ({ style: styleOf(), chain: styleChain(), ready: TREE.filter(nodeReady).map(n => n[0]), locked: TREE.filter(n => styleLocked(n[0])).map(n => n[0]) }),
     resetSkills: () => { initSkills(); player.chain = 0; },
     setCls: k => { CLS = k; },
-    openTreeTab: t => { pendingPicks = Math.max(pendingPicks, 1); openTree(); lvlCard.tab = t; const i = TREE.findIndex(n => n[1] === t); if (i >= 0) lvlCard.sel = i; },
+    openTreeTab: t => { pendingPicks = Math.max(pendingPicks, 1); openTree(); if (ngPlus) { lvlCard.tab = t; const i = TREE.findIndex(n => n[1] === t); if (i >= 0) lvlCard.sel = i; } },
+    xp: n => gainXP(n),
     foeState: () => { const e = enemies.find(e => !e.dead && !e.crowd); return e ? { st: e.st, x: Math.round(e.x), y: Math.round(e.y), lrag: !!e.lrag, ang: e.lrag && e.lrag.sk ? +e.lrag.sk.ang.toFixed(2) : null, front: e.lrag && e.lrag.gu ? e.lrag.gu.front : null, f: e.f } : null; },
     killNear: v => { const e = enemies.find(e => !e.dead && !e.crowd); if (!e) return; e.x = player.x + player.face * 30; e.y = player.y; e.hp = 0; killEnemy(e); if (e.rag) { e.rag.vx = player.face * v; e.rag.vz = 4; e.rag.rotV = player.face * 0.25; e.rag.flail = 0.6; } },
     bodies: () => enemies.filter(e => e.dead && e.rag).map(e => ({ x: Math.round(e.x), y: Math.round(e.y), z: Math.round(e.rag.z), fade: e.fadeT || 0 })),
