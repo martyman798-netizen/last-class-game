@@ -2602,7 +2602,7 @@ function legHit(e, dmg) {
   if (Math.random() < 0.5) say(e.x, e.y - 50, pick(['WOBBLE', 'NOT THE LEGS', 'TIMBER?']), '#ffd23f');
   if (e.legDmg < 34 || e.dead) return;
   e.legDmg = 0;
-  const limb = gore && e.missing && FS[e.sprName] && FS[e.sprName].layered ? pickLimb(e, 'leg') : null;
+  const limb = !e.t.boss && gore && e.missing && FS[e.sprName] && FS[e.sprName].layered ? pickLimb(e, 'leg') : null;   // bosses keep their legs till the end
   if (limb) sever(e, limb, player.face, false);
   else if (e.st !== 'down') { e.setState('down', 60); shake = Math.max(shake, 8); say(e.x, e.y - 60, 'TIMBER!', '#ff6b35', true); }
   styleAdd('legday', 20);
@@ -2611,10 +2611,10 @@ function limbCap(e) { return Math.max(12, e.maxhp * 0.28 * (1 - perk('limb'))); 
 function trySever(e, kind, dmg, killing, dirX) {
   if (!gore || !e.missing || !FS[e.sprName] || !FS[e.sprName].layered) return false;
   let chance;
-  if (killing) chance = dmg >= 13 ? 0.72 : 0.3;
-  else {
-    if (dmg < 11 || e.hp > e.maxhp * 0.85) return false;   // not on fresh enemies
-    chance = clamp((dmg - 8) / 24, 0, 0.55);
+  if (killing) chance = (dmg >= 13 ? 0.72 : 0.3) * (e.crowd ? 0.35 : 1);
+  else {                                                     // mid-fight: rarely, one limb, a regular who's nearly done
+    if (e.t.boss || e.crowd || (e.missing && e.missing.size) || dmg < 11 || e.hp > e.maxhp * 0.3) return false;
+    chance = clamp((dmg - 10) / 40, 0, 0.18);
   }
   if (Math.random() > chance) return false;
   if (kind === 'head' && !killing) kind = 'arm';             // heads only come off on a kill
@@ -2810,7 +2810,7 @@ function drawClassTrait() {
   }
 }
 // how much tougher everyone is than their listed health
-const HP_K = 2.6, BOSS_HP_K = 2.0;
+const HP_K = 3.2, BOSS_HP_K = 1.75;
 // how often each kind puts its guard up against a light attack (elites and bosses more)
 const GUARD = { shades: 0.12, dino: 0.1, blonde: 0.22, flower: 0.25, bulker: 0.28 };
 CLASSES.yoga.tl.counter = { wind: ['hiKickW'], act: ['hiKickS'], rec: ['kickR', 'kickR2'] };
@@ -3583,39 +3583,39 @@ try { best = +localStorage.getItem('lastclass.best') || 0; } catch (e) { best = 
 
 // mood: wall / window / accent light; music: which track plays
 let ROUNDS = [
-  { name: 'WARM-UP',  sub: 'class has started. so has the complaining', wave: ['shades', 'shades', 'shades'], tokens: 1,
+  { name: 'WARM-UP',  sub: 'class has started. so has the complaining', wave: ['shades', 'shades'], tokens: 1,
     music: 'gym', mood: 0, scene: 'gym' },
-  { name: 'CARDIO',   sub: 'it is getting competitive',   wave: ['shades', 'dino', 'shades', 'dino'], tokens: 2,
+  { name: 'CARDIO',   sub: 'it is getting competitive',   wave: ['shades', 'dino', 'shades'], tokens: 2,
     music: 'gym', mood: 0 },
-  { name: 'STRENGTH', sub: 'someone added weight plates', wave: ['dino', 'blonde', 'shades', 'blonde'], tokens: 2,
+  { name: 'STRENGTH', sub: 'someone added weight plates', wave: ['dino', 'blonde', 'shades'], tokens: 2,
     music: 'gym', mood: 1 },
-  { name: 'HIIT',     sub: 'the regulars have arrived',   wave: ['shades', 'shadesX', 'spotter', 'shadesX', 'dino'], tokens: 3,
+  { name: 'HIIT',     sub: 'the regulars have arrived',   wave: ['shadesX', 'spotter', 'dino'], tokens: 2,
     music: 'hiit', mood: 2, room: 'locker' },
-  { name: 'CIRCUIT',  sub: 'no breaks between stations',  wave: ['dinoX', 'spotter', 'blonde', 'shadesX', 'physio'], tokens: 4,
+  { name: 'CIRCUIT',  sub: 'no breaks between stations',  wave: ['dinoX', 'blonde', 'physio'], tokens: 2,
     music: 'hiit', mood: 2, room: 'locker' },
-  { name: 'MAX OUT',  sub: 'everyone is lifting heavy',   wave: ['blondeX', 'shadesX', 'dinoX', 'physio', 'spotter'], tokens: 4,
+  { name: 'MAX OUT',  sub: 'everyone is lifting heavy',   wave: ['blondeX', 'shadesX', 'dinoX', 'physio'], tokens: 2,
     music: 'hiit', mood: 3 },
   { name: 'COOLDOWN', sub: 'she never cools down',        wave: ['flower'], tokens: 2,
     music: 'boss', mood: 4, ko: 'CLASS IS OVER' },
   // ---- stage 2: he goes for a snack ----
-  { name: 'ORDER UP',     sub: 'the queue is hostile',           wave: ['bulker', 'shades', 'bulker'], tokens: 2,
+  { name: 'ORDER UP',     sub: 'the queue is hostile',           wave: ['bulker', 'shades'], tokens: 2,
     music: 'diner', mood: 5, stage: 2, scene: 'diner' },
-  { name: 'DRIVE-THRU',   sub: 'they came in through the window', wave: ['bulker', 'heckler', 'spotter', 'bulker'], tokens: 2,
+  { name: 'DRIVE-THRU',   sub: 'they came in through the window', wave: ['bulker', 'heckler', 'spotter'], tokens: 2,
     music: 'diner', mood: 5, stage: 2 },
-  { name: 'SUPERSIZE',    sub: 'everything comes in large',      wave: ['bulkerX', 'cashier', 'bulker', 'heckler', 'cashier', 'spotter'], tokens: 4,
+  { name: 'SUPERSIZE',    sub: 'everything comes in large',      wave: ['bulkerX', 'cashier', 'heckler', 'cashier'], tokens: 2,
     music: 'diner', mood: 6, stage: 2 },
-  { name: 'BACK OF HOUSE',  sub: 'the kitchen staff have had enough of you', wave: ['cook', 'cashier', 'cook', 'cashier', 'chef', 'cook', 'chef'], tokens: 3,
+  { name: 'BACK OF HOUSE',  sub: 'the kitchen staff have had enough of you', wave: ['cook', 'cashier', 'chef', 'cook', 'chef'], tokens: 2,
     music: 'diner', mood: 6, stage: 2, room: 'kitchen' },
   { name: 'SPEAK TO THE MANAGER', sub: 'he comes out of the back office', wave: ['manager'], tokens: 2,
     music: 'boss', mood: 7, stage: 2, ko: "YOU'RE FIRED", room: 'kitchen' },
   { name: 'CLOSING TIME', sub: 'nobody leaves until the fryer is empty', wave: ['bulkerBoss'], tokens: 2,
     music: 'boss', mood: 7, stage: 2, ko: 'KITCHEN CLOSED' },
   // ---- stage 3: the walk home ----
-  { name: 'NIGHT BUS',       sub: 'missed it. of course he missed it',  wave: ['jamal', 'shades', 'shades'], tokens: 2,
+  { name: 'NIGHT BUS',       sub: 'missed it. of course he missed it',  wave: ['jamal', 'shades'], tokens: 2,
     music: 'street', mood: 8, stage: 3, scene: 'street' },
-  { name: 'SHORTCUT',        sub: 'it was not a shortcut',              wave: ['clark', 'jamal', 'dinoX', 'spotter'], tokens: 3,
+  { name: 'SHORTCUT',        sub: 'it was not a shortcut',              wave: ['clark', 'jamal', 'dinoX'], tokens: 2,
     music: 'street', mood: 9, stage: 3, room: 'alley' },
-  { name: 'NO STREETLIGHTS', sub: 'something is breathing behind the bins', wave: ['jamal', 'heckler', 'clark', 'blondeX', 'jamal'], tokens: 4,
+  { name: 'NO STREETLIGHTS', sub: 'something is breathing behind the bins', wave: ['jamal', 'heckler', 'clark', 'blondeX'], tokens: 2,
     music: 'street', mood: 9, stage: 3, room: 'alley' },
   { name: 'LEG DAY',         sub: 'he has been waiting under the streetlight', wave: ['pete'], tokens: 2,
     music: 'boss', mood: 10, stage: 3, ko: 'TIMBER' },
@@ -3729,7 +3729,7 @@ function startRound(flowing) {
   spawnQ = spawnQ.concat(r.wave);
   spawnDelay = flowing ? 20 : 55;
   if (!flowing) layoutProps();                 // mid-fight the room stays as wrecked as you left it
-  attackToken = Math.max(1, r.tokens + DIFF().tok);
+  attackToken = Math.min(2, Math.max(1, r.tokens + DIFF().tok));   // at most two swinging at you
   roundStats = { t0: classTime, dmg0: dmgTaken, combo: 0, sev: 0, parry: 0 };
   planWorldEvent();
   if (player && !flowing) { player.baseZ = 0; player.airY = 0; player.airV = 0; player.peakZ = 0; if (['vault', 'mantle', 'wallkick', 'cutter'].includes(player.st)) player.setState('idle'); }
@@ -3805,7 +3805,7 @@ function stepWorldEvent() {
 function startWorldEvent() {
   const st = evKey(), ev = WORLD_EVENTS[st];
   evAt = 0; evHad[st] = (evHad[st] || 0) + 1;
-  const sizes = [(rnd(4, 6.99) | 0), (rnd(4, 6.99) | 0), (rnd(5, 7.99) | 0)];
+  const sizes = [(rnd(3, 4.99) | 0), (rnd(3, 4.99) | 0), (rnd(4, 5.99) | 0)];
   worldEv = { ev, st, phase: 'warn', t: 0, wave: 0, side: Math.random() < 0.5 ? -1 : 1, queue: [], ko: 0, through: 0, total: 0,
               sizes, plan: sizes[0] + sizes[1] + sizes[2] };
   worldEv.need = Math.ceil(worldEv.plan * 0.5);
@@ -4400,10 +4400,10 @@ function addCombo() {
   combo++; comboT = 112;
   if (combo > comboBest) comboBest = combo;
   if (roundStats && combo > roundStats.combo) roundStats.combo = combo;
-  p.super = Math.min(p.maxsuper, p.super + 4 * (1 + perk('superK') + (has('whistle') && progression() && learned.has('whistle') ? 0.5 : 0)));
+  p.super = Math.min(p.maxsuper, p.super + 2 * (1 + perk('superK') + (has('whistle') && progression() && learned.has('whistle') ? 0.5 : 0)));
   // every 5 hits pays back stamina, so pressing the advantage funds itself
   if (combo % 5 === 0) {
-    p.stam = Math.min(p.maxstam, p.stam + 11);
+    p.stam = Math.min(p.maxstam, p.stam + 6);
     say(p.x, p.y - 72, '+STAMINA', '#4fc3f7');
   }
   // deep combos start giving health back
@@ -4519,6 +4519,7 @@ function playerHit(e, mv) {
   if (e.st === 'eblock' && mv.guardBreak) {             // a heavy smashes the guard open: stagger -> finisher
     e.setState('stagger', 64); e.poise = e.maxpoise; e.blockPunish = false;
     say(e.x, e.y - e.h - 8, 'GUARD BREAK', '#4fc3f7', true);
+    player.super = Math.min(player.maxsuper, player.super + 8 * (1 + perk('superK')));
     ring(e.x, e.y - e.h * 0.5, '#4fc3f7', 5, 34); A.crunch(0.8); shake = Math.max(shake, 7);
     logEv('guardbreak');
   } else if (enemyGuard(e, mv)) {
@@ -4554,7 +4555,9 @@ function playerHit(e, mv) {
     return;
   }
   const flexing = e.armorT > 0;
-  const dmg = Math.round(mv.dmg * mult * (flexing ? 0.25 : 1));
+  const opening = !e.crowd && (e.st === 'stagger' || witchT > 0) ? 1.5 : 1;     // a parried, guard-broken or dodged enemy is wide open
+  const dmg = Math.round(mv.dmg * mult * (flexing ? 0.25 : 1) * opening);
+  if (opening > 1 && (!e.openT || classTime - e.openT > 60)) { e.openT = classTime; say(e.x, e.y - e.h - 18, 'OPENING x1.5', '#4fc3f7'); }
   e.hp -= dmg;
   gainXP(dmg); afterHitAbsurd(e, dmg);
   e.poise -= flexing ? 0 : mv.poise;
@@ -4593,13 +4596,13 @@ function playerHit(e, mv) {
   burst(sx, sy, big ? 8 : 3, null, big ? 3.4 : 2.2);
   impact(sx, sy, dir, big);
   vibrate(e, big ? 9 : 4, big ? 2 : 1);
-  bloodSpray(sx, sy, e.y, big ? 9 : 4, dir, big ? 1.3 : 0.8);
+  bloodSpray(sx, sy, e.y, big ? 7 : 2, dir, big ? 1.2 : 0.7);
   say(e.x + rnd(-6, 6), sy - 8, String(dmg), combo >= 6 ? '#ffd23f' : '#fff');
 
   const killing = e.hp <= 0;
   let cut = false;
   // every hit wears down the limb it lands on; enough, and it comes off - mid-fight
-  if (!killing && gore && e.limbDmg && FS[e.sprName] && FS[e.sprName].layered) {
+  if (false && !killing && gore && e.limbDmg && FS[e.sprName] && FS[e.sprName].layered) {   // (old: limbs wore off mid-fight)
     const kind = mv.sever || SEVER_KIND[mv.name] || 'arm';
     const limb = pickLimb(e, kind === 'head' ? 'arm' : kind) || pickLimb(e, kind === 'leg' ? 'arm' : 'leg');
     if (limb) {
@@ -4629,6 +4632,20 @@ function playerHit(e, mv) {
     return;
   }
 
+  // A swing they've started, or the moment they're back on their feet, isn't stopped by a light hit:
+  // read the tell and block, parry or jump it. Heavies, charged hits, counters and a broken poise still get through.
+  const heavyHit = mv.guardBreak || mv.charged >= 1 || mv.name === 'counter' || mv.name === 'shock' || mv.launch || mv.spike || (mv.dmg || 0) >= 18;
+  if (!heavyHit && !e.crowd && e.t.role !== 'dummy' && (e.st === 'tele' || e.st === 'act' || e.wakeT > 0)) {
+    e.poise += mv.poise * 0.5;                          // light hits wear their poise down at half rate mid-swing
+    if (e.poise <= 0) { e.setState('stagger', 56); e.poise = e.maxpoise; e.flash = 10;
+                        say(e.x, sy - 20, 'STAGGER', '#4fc3f7'); ring(sx, sy, '#4fc3f7', 4, 22); return; }
+    tanked(e, sx, sy);
+    return;
+  }
+  // keep hitting the same one and they fight their way out: shove off and get the guard up
+  e.chainN = (classTime - (e.chainAt || -999) < 50 ? (e.chainN || 0) : 0) + 1; e.chainAt = classTime;
+  if (!mv.knockdown && !heavyHit && e.poise > 0 && !e.crowd && e.t.role !== 'dummy' && e.st !== 'stagger' && e.chainN >= (e.t.boss || e.t.elite ? 3 : 4)) { breakOut(e); return; }
+
   if (mv.knockdown || e.poise <= 0) {
     if (mv.knockdown) { knockDown(e); }
     else { e.setState('stagger', 56); e.poise = e.maxpoise; e.flash = 10;
@@ -4636,6 +4653,24 @@ function playerHit(e, mv) {
   } else {
     e.setState('hurt', 11);
   }
+}
+let tankHint = 0;
+function tanked(e, sx, sy) {                             // the hit lands, the swing keeps coming
+  e.flash = 4;
+  burst(sx, sy, 4, '#ffb74d', 1.6);
+  A.tone(260, 200, 0.06, 'square', 0.06);
+  if (!e.tankT || classTime - e.tankT > 70) { e.tankT = classTime; say(e.x, e.y - e.h - 10, e.wakeT > 0 ? 'SHRUGS IT OFF' : 'NO FLINCH', '#ffb74d'); }
+  if (tankHint < 2 && e.st !== 'rec') { tankHint++; say(player.x, player.y - 84, "MID-SWING - BLOCK OR JUMP IT", '#fff', true); }
+  logEv('tanked');
+}
+function breakOut(e) {
+  e.chainN = 0;
+  e.face = sgn(player.x - e.x) || e.face;
+  e.vx = -e.face * 4.2;                                  // shove clear
+  e.setState('eblock', 30); e.blockPunish = true; e.poise = e.maxpoise; e.flash = 5;
+  say(e.x, e.y - e.h - 8, pick(['GET OFF ME', 'ENOUGH', 'GUARD UP', 'BACK OFF']), '#9fd0ff');
+  dust(e.x, e.y, 5, -e.face);
+  logEv('breakout');
 }
 
 function knockDown(e) {
@@ -4721,7 +4756,7 @@ function hitPlayer(e, mv) {
       say(p.x, p.y - 60, 'PARRY!', '#4fc3f7', true); styleAdd('parry', 20); startZen(p);
       if (roundStats) roundStats.parry++;
       if (perk('parryHeal')) { p.hp = Math.min(p.maxhp, p.hp + perk('parryHeal')); say(p.x, p.y - 72, '+' + perk('parryHeal'), '#8bc34a'); }
-      p.super = Math.min(p.maxsuper, p.super + 18 * (1 + perk('superK')));
+      p.super = Math.min(p.maxsuper, p.super + 26 * (1 + perk('superK')));
       p.stam = Math.min(p.maxstam, p.stam + 12);
       if (e.t && e.t.boss) bossPip(e, 'PARRY');                       // bosses shrug it off - unless you keep it up
       else if (e.setState) {                                           // everyone else: stunned, or on the floor
@@ -4744,7 +4779,7 @@ function hitPlayer(e, mv) {
     // normal block
     const chip = Math.max(perk('chip') ? 0 : 1, Math.round(mv.dmg * 0.15 * (1 - perk('chip'))));
     p.hp -= chip; dmgTaken += chip;
-    p.stam -= mv.dmg * 1.7;
+    p.stam -= mv.dmg * 1.2;                            // blocking is the plan now: it shouldn't empty you in three hits
     p.vx += sgn(p.x - e.x) * 2.6;
     A.block();
     hitStop = 3; shake = 2.5;
@@ -5382,6 +5417,7 @@ function checkPerfect(p, how) {
   witchT = Math.round((absurd('bullet') ? 300 : 100) * (1 + perk('witchK')));
   p.iframes = Math.max(p.iframes, 24);
   say(p.x, p.y - 70, 'PERFECT DODGE', '#9fd0ff', true); startZen(p);
+  p.super = Math.min(p.maxsuper, p.super + 14 * (1 + perk('superK')));
   ring(p.x, p.y - 20, '#9fd0ff', 6, 70); flashScreen = 5;
   A.tone(1400, 300, 0.4, 'sine', 0.16); A.tone(700, 150, 0.4, 'triangle', 0.1, 0.05);
   styleAdd('perfect', 25);
@@ -6077,7 +6113,7 @@ function updateEnemy(e) {
       break;
     case 'getup':
       if (e.lrag) stepLiveRag(e);
-      if (e.f <= 0) { e.setState('idle'); e.cool = rnd(10, 22); e.lrag = null; }
+      if (e.f <= 0) { e.setState('idle'); e.cool = rnd(0, 8); e.lrag = null; e.wakeT = 40; e.chainN = 0; }
       break;
     case 'stagger':
       if (e.f <= 0) { e.setState('idle'); e.cool = rnd(8, 20); }
@@ -6100,7 +6136,7 @@ function updateEnemy(e) {
         if (e.move.shock) { shake = 7; ring(e.x, e.y, '#ff8a65', 6, e.move.reach); quake(e.x, 1); }
         if (e.move.flash) cameraFlash(e);
         if (e.move.zones) lotusBloom(e);
-        if (e.move.summon && enemies.filter(o => !o.dead && !o.crowd).length < 4) {
+        if (e.move.summon && enemies.filter(o => !o.dead && !o.crowd).length < 3) {
           spawnQ.push(e.move.summon); spawnDelay = Math.min(spawnDelay, 10);
           say(e.x, e.y - 60, pick(['STAFF MEETING!', 'ALL HANDS!', 'WHO IS ON BREAK?!', 'CLOCK IN!']), '#ffd23f', true); A.tone(880, 660, 0.2, 'square', 0.08);
         }
@@ -6223,6 +6259,7 @@ function updateEnemy(e) {
     });
   }
   if (e.propT > 0) e.propT--;
+  if (e.wakeT > 0) e.wakeT--;
   if (e.shoveT > 0) e.shoveT--;
   if (e.armorT > 0) e.armorT--;
   if (e.hopT > 0) e.hopT--;
@@ -6372,7 +6409,7 @@ function update() {
 
   if (banner && --banner.t <= 0) banner = null;
 
-  const cap = bossRound(round) ? 3 : 4;
+  const cap = bossRound(round) ? 2 : 3;                // never more than three at once: room to see what each one does
   const alive = enemies.reduce((n, e) => n + (e.dead || e.crowd || e.leaving ? 0 : 1), 0);   // bodies lie around; crowds are passing through
   // a level up waiting: once the room is empty, the next lot holds back so the tree can open in the quiet
   const hold = autoTree && pendingPicks > 0 && SET.tree !== 'manual' && progression() && calmT < 240;
@@ -9392,7 +9429,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611261253', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611261528', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -9685,7 +9722,7 @@ function boot() {
                                     cool: Math.round(e.cool), q: e.queue.length, f: e.f,
                                     missing: e.missing ? [...e.missing] : [], hop: !!e.hop, crawl: !!e.crawl,
                                     kind: e.move ? e.move.kind : null, hp: Math.round(e.hp),
-                                    tok: !!e.hasToken, x: Math.round(e.x), y: Math.round(e.y) })),
+                                    tok: !!e.hasToken, x: Math.round(e.x), y: Math.round(e.y), dead: !!e.dead })),
     event: () => { if (!worldEv) evAt = classTime; },
     stagger: () => enemies.forEach(e => { if (!e.dead) e.setState('stagger', 80); }),
     downFoe: i => { const e = enemies.filter(z => !z.dead)[i || 0]; if (e) { e.setState('down', 200); e.hp = Math.min(e.hp, e.maxhp * 0.5); } },
@@ -9705,6 +9742,11 @@ function boot() {
     knock: (v, air) => { const e = enemies.find(e => !e.dead && !e.crowd); if (!e) return; e.x = player.x + player.face * 26; e.y = player.y; e.vx = player.face * v; if (air) { e.airY = 1; e.airV = 5; e.setState('air'); } else knockDown(e); e.hp = Math.max(e.hp, 40); },
     rigs: () => Object.keys(FS).filter(k => FS[k].layered).map(k => { const r = rigOf(k); return k + ':' + (r ? r.limbs.map(l => l.k).join(',') : 'none'); }),
     foeRig: () => { const e = enemies.find(e => !e.dead && !e.crowd); if (!e || !e.lrag || !e.lrag.sk) return null; const r = e.lrag, rig = rigOf(e.sprName); return { st: e.st, f: e.f, face: e.face, x: +e.x.toFixed(1), y: e.y, cz: +r.sk.cz.toFixed(1), ang: +r.sk.ang.toFixed(2), gu: r.gu && { s: r.gu.s, front: r.gu.front, hand: r.gu.hand && +r.gu.hand.toFixed(1), knee: r.gu.knee && +r.gu.knee.toFixed(1), foot: +r.gu.foot.toFixed(1) }, L: rig.limbs.map((l, i) => ({ k: l.k, len: +l.len.toFixed(1), px: l.px, py: l.py, th: +r.sk.L[i].th.toFixed(2), X: r.sk.L[i].X && +r.sk.L[i].X.toFixed(1), Y: r.sk.L[i].Y && +r.sk.L[i].Y.toFixed(1) })), rig: { tcx: rig.tcx, tcy: rig.tcy, hl: rig.hl, hw: rig.hw, restH: rig.restH } }; },
+    phit: (name, who) => { const e = enemies.find(z => !z.dead && !z.crowd && (!who || z.type === who)); if (!e) return null; playerHit(e, PMOVES[name]); return { st: e.st, hp: e.hp, poise: e.poise, missing: [...(e.missing || [])] }; },
+    foeSwing: () => { const e = enemies.find(z => !z.dead && !z.crowd); if (!e) return null; e.face = sgn(player.x - e.x) || 1; const q = pickMoves(e, e.t.near, true); startEMove(e, q[0]); return e.st + ':' + e.moveName; },
+    foeCalm: () => { const e = enemies.find(z => !z.dead && !z.crowd); if (!e) return; e.cool = 9999; e.hasToken = false; e.queue = []; if (e.st !== 'getup') e.setState('idle'); },
+    foeWake: () => { const e = enemies.find(z => !z.dead && !z.crowd); if (!e) return; e.setState('getup', 1); },
+    rounds: () => ROUNDS.map(r => r.wave.length),
     foeState: () => { const e = enemies.find(e => !e.dead && !e.crowd); return e ? { st: e.st, x: Math.round(e.x), y: Math.round(e.y), lrag: !!e.lrag, ang: e.lrag && e.lrag.sk ? +e.lrag.sk.ang.toFixed(2) : null, front: e.lrag && e.lrag.gu ? e.lrag.gu.front : null, f: e.f } : null; },
     killNear: v => { const e = enemies.find(e => !e.dead && !e.crowd); if (!e) return; e.x = player.x + player.face * 30; e.y = player.y; e.hp = 0; killEnemy(e); if (e.rag) { e.rag.vx = player.face * v; e.rag.vz = 4; e.rag.rotV = player.face * 0.25; e.rag.flail = 0.6; } },
     bodies: () => enemies.filter(e => e.dead && e.rag).map(e => ({ x: Math.round(e.x), y: Math.round(e.y), z: Math.round(e.rag.z), fade: e.fadeT || 0 })),
