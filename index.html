@@ -45,6 +45,7 @@
     align-items:center;justify-content:center;font-weight:800;color:#1b1630;
     letter-spacing:.03em;border:3px solid rgba(0,0,0,.3);text-align:center;line-height:1.05;opacity:.85}
   .btn.on{transform:scale(.92);filter:brightness(1.3);opacity:1}
+  #bBlock{outline:2px dashed rgba(159,208,255,.22);outline-offset:10px}   /* the dashed ring: a touch anywhere inside still blocks */
   #bBlock  {width:58px;height:58px;right:calc(146px + env(safe-area-inset-right));bottom:calc(14px + env(safe-area-inset-bottom));
             background:#6d8fb8;color:#fff;font-size:9px}
   #bWhistle{width:44px;height:44px;right:calc(150px + env(safe-area-inset-right));bottom:calc(82px + env(safe-area-inset-bottom));
@@ -433,6 +434,30 @@ function setupTouch() {
   };
   bind(document.getElementById('bBlock'), 'block');
   bind(document.getElementById('bWhistle'), 'whistle');
+  {
+    const bb = document.getElementById('bBlock'); let bid = null;
+    const near = t => {                                   // within a generous margin of the button, but not on another button
+      if (!bb || ctlShown !== 3) return false;
+      const r = bb.getBoundingClientRect(), m = Math.max(18, r.width * 0.4);
+      if (!r.width || t.clientX < r.left - m || t.clientX > r.right + m || t.clientY < r.top - m || t.clientY > r.bottom + m) return false;
+      const el = document.elementFromPoint(t.clientX, t.clientY);
+      if (el && el.closest && el.closest('#apad, #stick')) return false;   // on the attack pad itself: that's an attack
+      return !(el && el.closest && el.closest('.btn, #bPause') && el.closest('.btn, #bPause') !== bb);
+    };
+    addEventListener('touchstart', e => {
+      for (const t of e.changedTouches) {
+        if (bid !== null || !near(t)) continue;
+        const el = document.elementFromPoint(t.clientX, t.clientY);
+        if (el && el.closest && el.closest('#bBlock')) continue;          // right on it: the button handles it
+        bid = t.identifier; A.init(); A.resume(); T.block = true; T.blockEdge = true; bb.classList.add('on');
+        e.preventDefault(); e.stopPropagation(); t.__lcBlock = true;
+      }
+    }, { capture: true, passive: false });
+    const off = e => { for (const t of e.changedTouches) if (t.identifier === bid) { bid = null; T.block = false; bb.classList.remove('on'); e.stopPropagation(); } };
+    addEventListener('touchend', off, { capture: true }); addEventListener('touchcancel', off, { capture: true });
+    addEventListener('touchmove', e => { for (const t of e.changedTouches) if (t.identifier === bid) { e.preventDefault(); e.stopPropagation(); } }, { capture: true, passive: false });
+    TL.nearBlock = near;
+  }
   const ap = setupActionPad(), padEl = document.getElementById('apad');
   /* FLOATING (Brawl Stars style): one listener for the whole screen. During a fight, a thumb
      that lands anywhere on the left half becomes the stick, anywhere on the right half the
@@ -443,7 +468,7 @@ function setupTouch() {
     if (!floating() || ctlShown !== 3) return;
     let mine = false;
     for (const t of e.changedTouches) {
-      if (onBtn(t)) continue;
+      if (onBtn(t) || (TL.nearBlock && TL.nearBlock(t))) continue;            // BLOCK (or near it) wins over the floating pad
       if (badgeTouch(t)) { mine = true; continue; }
       if (t.clientX < innerWidth / 2) {
         if (id !== null) continue;
@@ -9429,7 +9454,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611261528', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611261707', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -9555,7 +9580,7 @@ function layoutTouch() {
   const px = v => Math.round(v) + 'px';
   const kn = px(P * 0.4);
   set('knob', { width: kn, height: kn }); set('aknob', { width: kn, height: kn });
-  const B = Math.round(P * 0.47), Wh = Math.round(P * 0.36);
+  const B = Math.round(P * 0.62), Wh = Math.round(P * 0.36);      // BLOCK is big now: you need it
   const op = (!SET.padPos || SET.padPos === 'float') ? '0.35' : TL.side ? '' : '0.6';
   if (TL.side) {
     const lc = Math.max(lb / 2, P / 2 + 16), rc = W - Math.max(rb / 2, P / 2 + 16);
@@ -9563,15 +9588,18 @@ function layoutTouch() {
     const up = low ? Math.max(22, Math.round(H * 0.09)) : Math.round(Math.min(H * 0.42 - P / 2, H - P - (P * 0.47 + 10) - (P * 0.36 + 8) - 56));
     set('stick', { width: px(P), height: px(P), left: px(lc - P / 2), right: '', bottom: px(up), opacity: op });
     set('apad', { width: px(P), height: px(P), right: px(W - rc - P / 2), left: '', bottom: px(up), opacity: op });
-    set('bBlock', { width: px(B), height: px(B), right: px(W - rc - B / 2), bottom: px(up + P + 10), opacity: op });
-    set('bWhistle', { width: px(Wh), height: px(Wh), right: px(W - rc - Wh / 2), bottom: px(up + P + 10 + B + 8), opacity: op });
+    set('bBlock', { width: px(B), height: px(B), right: px(W - rc - B / 2), bottom: px(up + P + 22), opacity: op });
+    const finUp = up + P + 22 + B + 10;
+    if (finUp + Wh < H - 58) set('bWhistle', { width: px(Wh), height: px(Wh), right: px(W - rc - Wh / 2), bottom: px(finUp), opacity: op });
+    else if (up >= Wh + 14) set('bWhistle', { width: px(Wh), height: px(Wh), right: px(W - rc - Wh / 2), bottom: px(Math.max(6, (up - Wh) / 2)), opacity: op });   // no room above: under the pad
+    else set('bWhistle', { width: px(Wh), height: px(Wh), right: px(W - rc + B / 2 + 12), bottom: px(up + P + 22 + (B - Wh) / 2), opacity: op });            // last resort: beside BLOCK
     set('bPause', { right: px(W - rc - 18), top: px(10) });
   } else {
     const up = low ? 8 : Math.round(Math.max(8, H * 0.42 - P / 2));
     set('stick', { width: px(P), height: px(P), left: px(8), right: '', bottom: px(up), opacity: op });
     set('apad', { width: px(P), height: px(P), right: px(8), left: '', bottom: px(up), opacity: op });
-    set('bBlock', { width: px(B), height: px(B), right: px(8 + P + 10), bottom: px(up), opacity: op });
-    set('bWhistle', { width: px(Wh), height: px(Wh), right: px(8 + P + 14), bottom: px(up + B + 10), opacity: op });
+    set('bBlock', { width: px(B), height: px(B), right: px(8 + P + 26), bottom: px(up), opacity: op });
+    set('bWhistle', { width: px(Wh), height: px(Wh), right: px(8 + P + 26 + (B - Wh) / 2), bottom: px(up + B + 12), opacity: op });
     set('bPause', { right: px(8), top: px(8) });
   }
 }
@@ -9747,6 +9775,8 @@ function boot() {
     foeCalm: () => { const e = enemies.find(z => !z.dead && !z.crowd); if (!e) return; e.cool = 9999; e.hasToken = false; e.queue = []; if (e.st !== 'getup') e.setState('idle'); },
     foeWake: () => { const e = enemies.find(z => !z.dead && !z.crowd); if (!e) return; e.setState('getup', 1); },
     rounds: () => ROUNDS.map(r => r.wave.length),
+    touchIn: () => ({ block: !!T.block, charging: !!T.charging, padAct: document.getElementById('apad').classList.contains('act') }),
+    setPad: v => { SET.padPos = v; layoutTouch(); },
     foeState: () => { const e = enemies.find(e => !e.dead && !e.crowd); return e ? { st: e.st, x: Math.round(e.x), y: Math.round(e.y), lrag: !!e.lrag, ang: e.lrag && e.lrag.sk ? +e.lrag.sk.ang.toFixed(2) : null, front: e.lrag && e.lrag.gu ? e.lrag.gu.front : null, f: e.f } : null; },
     killNear: v => { const e = enemies.find(e => !e.dead && !e.crowd); if (!e) return; e.x = player.x + player.face * 30; e.y = player.y; e.hp = 0; killEnemy(e); if (e.rag) { e.rag.vx = player.face * v; e.rag.vz = 4; e.rag.rotV = player.face * 0.25; e.rag.flail = 0.6; } },
     bodies: () => enemies.filter(e => e.dead && e.rag).map(e => ({ x: Math.round(e.x), y: Math.round(e.y), z: Math.round(e.rag.z), fade: e.fadeT || 0 })),
