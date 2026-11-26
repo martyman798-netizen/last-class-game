@@ -933,16 +933,39 @@ function stepRagdoll(e) {
   if (!r) return;
   r.vz -= 0.42;
   r.z += r.vz;
-  e.x += r.vx;
-  r.vx *= 0.985;
+  e.x += r.vx; e.y += (r.vy || 0);
+  r.vx *= 0.985; r.vy = (r.vy || 0) * (r.grounded ? 0.8 : 0.97);
   r.rot += r.rotV;
+  // walls: bodies bounce off them instead of sticking
+  if ((e.x < WALL_L - 6 && r.vx < 0) || (e.x > WALL_R + 6 && r.vx > 0)) {
+    const hard = Math.abs(r.vx) > 3;
+    r.vx = -r.vx * 0.45; r.rotV = -r.rotV * 0.7 + rnd(-0.1, 0.1);
+    if (hard) { A.land(true); shake = Math.max(shake, 4); dust(e.x, e.y - r.z, 6, sgn(r.vx)); if (gore) stainFloor(e.x, e.y, 3); r.vz = Math.max(r.vz, 1.5); }
+  }
+  if (e.y < DEPTH_TOP) { e.y = DEPTH_TOP; r.vy = Math.abs(r.vy) * 0.4; }
+  if (e.y > FLOOR_BOT) { e.y = FLOOR_BOT; r.vy = -Math.abs(r.vy) * 0.4; }
+  // a body flying fast takes down whoever it hits
+  if (Math.abs(r.vx) > 5 && r.z < 30) enemies.forEach(o => {
+    if (o === e || o.dead || o.crowd || o.finLock || o.st === 'down' || o.st === 'thrown') return;
+    if (Math.abs(o.x - e.x) < 14 && Math.abs(o.y - e.y) < 12) {
+      o.hp -= 8; knockDown(o); o.vx = sgn(r.vx) * 4; r.vx *= 0.6; A.crunch(0.6);
+      say(o.x, o.y - o.h - 6, 'STRIKE!', '#4fc3f7'); if (o.hp <= 0) killEnemy(o);
+    }
+  });
+  // bodies lying on top of each other slide apart a little
+  if (r.grounded && classTime % 4 === 0) enemies.forEach(o => {
+    if (o === e || !o.dead || !o.rag || !o.rag.grounded) return;
+    const dx = e.x - o.x;
+    if (Math.abs(dx) < 10 && Math.abs(e.y - o.y) < 5) { e.x += (dx >= 0 ? 0.6 : -0.6); }
+  });
 
   if (r.z <= 0) {
     r.z = 0;
     if (r.vz < -1.3) {                       // bounce
-      r.vz = -r.vz * 0.3;
-      r.vx *= 0.5;
-      r.rotV *= 0.45;
+      r.vz = -r.vz * 0.38;
+      r.vx *= 0.62;
+      r.rotV = r.rotV * 0.55 + rnd(-0.12, 0.12);
+      r.vy = (r.vy || 0) + rnd(-0.6, 0.6);
       burst(e.x, e.y, 5, '#c9a06a', 1.6);
       if (gore) { bloodSpray(e.x, e.y - 6, e.y, 4, sgn(r.vx), 0.7); stainFloor(e.x, e.y, 3); }
       A.land(false);
@@ -985,7 +1008,7 @@ function drawRagdoll(e) {
     if (r.grounded && Math.abs(r.rotV) < 0.08) {
       drawCharFrame(e.sprName, 'down', e.x, e.y, e.face, mode, 0, e.missing);
     } else {
-      const q = Math.round(r.rot / (Math.PI / 2)) * (Math.PI / 2);
+      const q = Math.round(r.rot / (Math.PI / 8)) * (Math.PI / 8);   // tumbling in eighth turns: smooth at phone resolution
       drawCharFrame(e.sprName, 'air', e.x, e.y - r.z, e.face, mode, q, e.missing);
     }
     return;
@@ -1238,6 +1261,21 @@ function punt(o, vx, vy, vz, from) {
   o.lastFrom = from || null;
 }
 
+/* a broken thing: its own drawing, knocked flat, darker, with the bits missing */
+function drawWreck(w) {
+  const o = w.o, base = o.y;
+  ctx.fillStyle = 'rgba(15,10,8,.35)'; ctx.beginPath(); ctx.ellipse(o.x, base - 1, o.w + 6, Math.max(3, o.d + 2), 0, 0, 7); ctx.fill();
+  ctx.save();
+  ctx.translate(o.x, base); ctx.rotate(w.tilt); ctx.scale(1.08, 0.34); ctx.translate(-o.x, -base);
+  ctx.globalAlpha = 0.8;
+  try { drawProp(o); } catch (err) { /* some props can't be drawn flat: skip them */ }
+  ctx.restore();
+  // a few dark gaps, so it reads as smashed rather than squashed
+  let sd = w.seed;
+  const rr = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+  ctx.fillStyle = 'rgba(20,12,8,.55)';
+  for (let i = 0; i < 5; i++) ctx.fillRect(Math.round(o.x - o.w + rr() * o.w * 2), Math.round(base - 3 - rr() * Math.max(3, o.h * 0.3)), 2 + (rr() * 4 | 0), 1 + (rr() * 2 | 0));
+}
 function damageProp(o, dmg, dirX) {
   if (!o.hp) return false;
   o.hp -= dmg; o.flash = 6;
@@ -1266,8 +1304,11 @@ function initDebris() {
   debrisLayer = document.createElement('canvas'); debrisLayer.width = LW; debrisLayer.height = LH;
   debrisCtx = debrisLayer.getContext('2d');
 }
+let wrecks = [], roomBodies = [];
+const BODY_CAP = 26;
 function clearScene() {                       // a fresh room: no debris, no puddles, whole windows
   if (debrisCtx) debrisCtx.clearRect(0, 0, LW, LH);
+  wrecks = [];
   puddles = []; panes = null; wallCracks = []; geysers = [];
 }
 function dot(x, y, w, h, col) { debrisCtx.fillStyle = col; debrisCtx.fillRect(Math.round(x), Math.round(y), w, h); }
@@ -1278,9 +1319,9 @@ function debrisSauce(x, y) {
     const r = rnd(2, 6); dot(x + rnd(-26, 26), y + rnd(-6, 8), Math.round(r), Math.max(1, Math.round(r / 2)), col);
   }
 }
-function shards(x, y, n, cols, power) {
+function shards(x, y, n, cols, power) {               // they fly, land, and stay on the floor
   for (let i = 0; i < n; i++) parts.push({ x: x + rnd(-6, 6), y: y - rnd(0, 20), vx: rnd(-3.5, 3.5) * power, vy: rnd(-4, -0.5) * power,
-    g: 0.25, life: rnd(26, 48), col: pick(cols), s: rnd(1, 2.4) });
+    g: 0.25, life: 120, col: pick(cols), s: rnd(1, 2.4), land: clamp(y + rnd(-6, 10), DEPTH_TOP, FLOOR_BOT + 6) });
 }
 // everyone close enough gets a piece of it
 function splashHurt(o, dmg, txt, col) {
@@ -1293,6 +1334,7 @@ function splashHurt(o, dmg, txt, col) {
 }
 function breakProp(o, dir) {
   const cx = o.x, cy = o.y - o.h * 0.5;
+  if (!o.flat && wrecks.length < 40) wrecks.push({ o: Object.assign({}, o, { gone: false, held: false, vz: 0, z: 0 }), tilt: rnd(-0.12, 0.12) * (dir || 1), seed: (Math.random() * 1e6) | 0 });
   shake = Math.max(shake, 7); hitStop = Math.max(hitStop, 4); addCombo(); score += 80;
   logEv('break:' + o.type); styleAdd('break:' + o.type, 10);
   wreckAdd(clamp((PROPT[o.type].hp || 10) / 6, 2, 6)); xBreak(o);
@@ -5022,6 +5064,18 @@ function resolvePlayerAttack(mv) {
     A.light(0.8); hitStop = Math.max(hitStop, 2); shake = Math.max(shake, 3);
     damageProp(o, mv.dmg);
   });
+  enemies.forEach(e => {                                 // bodies: punt them, juggle them, send them flying
+    if (!e.dead || !e.rag || e.flee || e.fadeT || p.hitSet.has(e)) return;
+    const dx = (e.x - p.x) * p.face;
+    if (dx < -10 || dx > mv.reach + 8 || Math.abs(e.y - p.y) > DEPTH_BAND + 4 || e.rag.z > 46) return;
+    p.hitSet.add(e);
+    const big = mv.dmg > 12, r = e.rag;
+    r.vx = p.face * (big ? 7.5 : 4) * (mv.spike ? 0.6 : 1); r.vz = mv.spike ? -2 : (mv.name === 'l3' || mv.launch ? 7 : big ? 4.5 : 3);
+    r.vy = rnd(-0.8, 0.8); r.rotV = p.face * (big ? 0.35 : 0.22); r.grounded = false; r.z = Math.max(r.z, 2);
+    A.crunch(big ? 0.7 : 0.4); hitStop = Math.max(hitStop, 2); shake = Math.max(shake, big ? 4 : 2);
+    if (gore) bloodSpray(e.x, e.y - 8 - r.z, e.y, big ? 8 : 4, p.face, 1);
+    dust(e.x, e.y, 4, p.face);
+  });
   enemies.forEach(e => {
     if (e.dead || p.hitSet.has(e)) return;
     if (e.st === 'down') return;
@@ -6028,11 +6082,18 @@ function update() {
   const stillHere = [];
   enemies.forEach(e => {
     if (e.exited && !e.dead) { if (worldEv) worldEv.through++; }
-    else if (e.dead && e.deadT > 250) {
-      if (!e.crowd && Math.random() < 0.32) pickups.push({ x: e.x, y: e.y, t: 0 });
-    } else stillHere.push(e);
+    else if (e.dead && (e.flee ? e.deadT > 250 : e.fadeT > 40)) { /* gone */ }
+    else {
+      if (e.dead && e.deadT > 250 && !e.dropped) { e.dropped = true; if (!e.crowd && Math.random() < 0.32) pickups.push({ x: e.x, y: e.y, t: 0 }); }
+      if (e.fadeT) e.fadeT++;
+      stillHere.push(e);
+    }
   });
   enemies = stillHere;
+  { // bodies stay where they fell; past BODY_CAP the oldest quietly go
+    const bodies = enemies.filter(e => e.dead && !e.flee && !e.fadeT);
+    if (bodies.length > BODY_CAP) bodies.sort((a, b) => b.deadT - a.deadT).slice(0, bodies.length - BODY_CAP).forEach(e => { e.fadeT = 1; });
+  }
 
   if (!(witchT > 0) || classTime % 3 === 0) stepShots();
   stepPickups(); stepParts(); stepProps(); stepLoot(); stepWreck(); stepRaid(); stepAbsurd();
@@ -6486,6 +6547,10 @@ function stepParts() {
     if (p.grow) p.s += p.grow;
     p.x += p.vx; p.y += p.vy; p.vy += p.g; p.life--;
     if (p.blood && p.y >= p.gy) { stainFloor(p.x, p.gy, p.s < 1.4 ? 2 : 3); p.life = 0; }
+    if (p.land && p.vy > 0 && p.y >= p.land) {            // a shard comes to rest: it's part of the floor now
+      if (debrisCtx && p.x > 0 && p.x < LW) dot(p.x, p.land, Math.max(1, Math.round(p.s)), 1, p.col);
+      p.life = 0;
+    }
   });
   parts = parts.filter(p => p.life > 0);
   floats.forEach(f => { f.y += f.vy; f.life--; });
@@ -6731,11 +6796,13 @@ function layoutRoom() {
 }
 function saveRoom(k) {
   const copy = src => { if (!src) return null; const c = document.createElement('canvas'); c.width = LW; c.height = LH; c.getContext('2d').drawImage(src, 0, 0); return c; };
-  roomMemo[k] = { props, debris: copy(debrisLayer), blood: copy(bloodLayer), panes, wallCracks, puddles, WRK, decor, geysers };
+  roomMemo[k] = { props, debris: copy(debrisLayer), blood: copy(bloodLayer), panes, wallCracks, puddles, WRK, decor, geysers, wrecks,
+                  bodies: enemies.filter(e => e.dead && !e.flee && !e.fadeT && e.rag) };
 }
 function loadRoom(k) {
   const m = roomMemo[k]; if (!m) return false;
   props = m.props; panes = m.panes; wallCracks = m.wallCracks; puddles = m.puddles; WRK = m.WRK; decor = m.decor; geysers = m.geysers; falling = []; chunks = [];
+  wrecks = m.wrecks || []; roomBodies = m.bodies || [];
   if (debrisCtx) { debrisCtx.clearRect(0, 0, LW, LH); if (m.debris) debrisCtx.drawImage(m.debris, 0, 0); }
   if (bloodCtx) { bloodCtx.clearRect(0, 0, LW, LH); if (m.blood) bloodCtx.drawImage(m.blood, 0, 0); }
   return true;
@@ -6753,7 +6820,9 @@ function updateDoor() {
   if (door.t === 26) {
     enemies = []; shots = []; pickups = []; parts = []; floats = [];
     if (player.carry) { if (player.carry.ref) player.carry.ref.held = false; player.carry = null; }
+    roomBodies = [];
     if (!loadRoom(door.to)) { clearScene(); clearBlood(); layoutProps(); }
+    enemies.push(...roomBodies); roomBodies = [];          // the ones you left here are still here
     player.x = WALL_L + 24; player.baseZ = 0; player.airY = 0; player.airV = 0; player.under = null;
     if (['vault', 'mantle', 'wallkick', 'cutter', 'climb'].includes(player.st)) player.setState('idle');
     startRound(true);
@@ -8395,7 +8464,7 @@ function drawActorBody(a, isP) {
   if (a.dead && a.flee) { drawCharFrame(a.sprName, 'run' + ((a.animT >> 3) % 4), a.x, a.y, a.flee, null, 0, null); return; }
   if (a.dead) {
     ctx.save();
-    if (a.deadT > 210) ctx.globalAlpha = Math.max(0, 1 - (a.deadT - 210) / 40);
+    if (a.fadeT) ctx.globalAlpha = Math.max(0, 1 - a.fadeT / 40);
     drawRagdoll(a);
     ctx.restore(); return;
   }
@@ -8574,6 +8643,7 @@ function render() {
   drawRuin(); drawDecor(); drawRaidFX();
   if (debrisLayer) ctx.drawImage(debrisLayer, 0, 0);
   props.forEach(o => { if (o.flat && !o.gone) drawProp(o); });   // yoga mats, under everything
+  wrecks.forEach(drawWreck);                                      // what's left of the furniture
   drawPuddles();
   if (bloodLayer) ctx.drawImage(bloodLayer, 0, 0);
   drawLootOnFloor();
@@ -9057,7 +9127,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611252318', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611260016', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -9367,6 +9437,10 @@ function boot() {
     fin: () => ({ super: Math.round(player.super), charges: finCharges(player), st: player.st, slow: slowMo, learned: [...learned] }),
     setSuper: v => { player.super = v; },
     finMove: k => { forceFin = k; },
+    bodies: () => enemies.filter(e => e.dead && e.rag).map(e => ({ x: Math.round(e.x), y: Math.round(e.y), z: Math.round(e.rag.z), fade: e.fadeT || 0 })),
+    nextTo: b => { player.x = b.x - 14; player.y = b.y; player.face = 1; },
+    wrecks: () => wrecks.length,
+    breakAll: () => { props.filter(o => !o.gone && !o.flat && o.hp).slice(0, 4).forEach(o => damageProp(o, 999, 1)); },
     bossInfo: () => { const e = enemies.find(e => e.t.boss && !e.crowd); return e ? { hp: Math.round(e.hp), st: e.st, dead: !!e.dead, lock: !!e.finLock, pose: !!e.finPose } : null; },
     stunBoss: () => { const e = enemies.find(e => !e.dead && e.t.boss); if (e) { e.x = player.x + player.face * 24; e.y = player.y; e.setState('stagger', 200); } return !!e; },
     farFoe: dx => { const e = enemies.find(e => !e.dead && !e.crowd); if (e) { e.x = clamp(player.x + (player.x < (WALL_L + WALL_R) / 2 ? dx : -dx), WALL_L + 10, WALL_R - 10); e.y = player.y + 12; e.setState('stagger', 200); } },
