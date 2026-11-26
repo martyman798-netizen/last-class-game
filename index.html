@@ -928,14 +928,126 @@ function makeRagdoll(e, dirX) {
 
 const LIMB_HANG = { head: 0, armFront: 0.95, armBack: -0.95, legFront: 0.15, legBack: -0.15 };
 
-function stepRagdoll(e) {
-  const r = e.rag;
-  if (!r) return;
-  r.vz -= 0.42;
-  r.z += r.vz;
-  e.x += r.vx; e.y += (r.vy || 0);
-  r.vx *= 0.985; r.vy = (r.vy || 0) * (r.grounded ? 0.8 : 0.97);
-  r.rot += r.rotV;
+/* ======================= JOINTED RAGDOLLS =======================
+   The enemies are drawn in six pieces (body, head, two arms, two legs) with the joints known.
+   A dead one becomes a little skeleton: the torso is a rigid body that falls, bounces and
+   topples; every limb is a pendulum on its joint, pulled by gravity and thrown around by
+   whatever the torso does - so a hard kick makes the arms and legs whip. Joint limits keep
+   it a person. Bodies that come to rest go to sleep until something hits them again. */
+const SKRIGS = {};
+const RGRAV = 0.42;
+const wrapA = a => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
+function rigOf(spr) {
+  if (spr in SKRIGS) return SKRIGS[spr];
+  const set = FS[spr];
+  if (!set || !set.layered) return (SKRIGS[spr] = null);
+  const fname = set.f.idle0 ? 'idle0' : set.f.walk0 ? 'walk0' : Object.keys(set.f)[0];
+  const fr = set.f[fname], m = set.meta, S = SCALE;
+  const bbox = k => {
+    const L = fr.layers[k]; if (!L) return null;
+    const c = L.img, d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+    for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) if (d[(y * c.width + x) * 4 + 3] > 40) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    return x1 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
+  };
+  const B = {}; ['body', 'head', 'armN', 'armF', 'legN', 'legF'].forEach(k => { B[k] = bbox(k); });
+  if (!B.body) return (SKRIGS[spr] = null);
+  const tcx = (B.body[0] + B.body[2]) / 2, tcy = (B.body[1] + B.body[3]) / 2, st = fr.stumps || {};
+  const pivot = (k, b) => st[k] ? [st[k][0] + 0.5, st[k][1] + 0.5]          // known joint, or read it off the drawing:
+    : k === 'head' ? [(b[0] + b[2]) / 2, b[3] - 1]                            // the neck is the bottom of the head
+    : [clamp((b[0] + b[2]) / 2, B.body[0], B.body[2]), b[1] + 1];             // shoulders and hips: the top of the limb
+  const limbs = [];
+  ['head', 'armN', 'armF', 'legN', 'legF'].forEach(k => {
+    const b = B[k]; if (!b) return;
+    const p = pivot(k, b), cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2;
+    let len = 0; [[b[0], b[1]], [b[2], b[1]], [b[0], b[3]], [b[2], b[3]]].forEach(([x, y]) => { len = Math.max(len, Math.hypot(x - p[0], y - p[1])); });
+    limbs.push({ k, px: p[0], py: p[1], a0: Math.atan2(cy - p[1], cx - p[0]), len: Math.max(2, len) * S,
+                 lim: k === 'head' ? 0.7 : k.startsWith('arm') ? 2.5 : 1.5 });
+  });
+  return (SKRIGS[spr] = { fname, tcx, tcy, limbs, w: m.w, h: m.h,
+    hl: (B.body[3] - B.body[1]) / 2 * S, hw: (B.body[2] - B.body[0]) / 2 * S, restH: (m.anchor[1] + 1 - tcy) * S });
+}
+function skelInit(e, r, rig) {
+  const f = e.face || 1, fl = r.flail || 0.3;
+  r.sk = { cz: (r.z || 0) + rig.restH, ang: r.rot || 0, still: 0,
+    L: rig.limbs.map(l => ({ th: (f === 1 ? l.a0 : Math.PI - l.a0) + (r.rot || 0), w: rnd(-fl, fl), X: null, Y: null, vx: 0, vy: 0 })) };
+}
+function stepSkeleton(e, r, rig) {
+  const sk = r.sk, f = e.face || 1, S = SCALE;
+  const moving = Math.abs(r.vx) > 0.08 || Math.abs(r.vz) > 0.08 || Math.abs(r.rotV) > 0.01 || !r.grounded;
+  if (sk.sleep && !moving) return;                       // at rest: nothing to do until someone kicks it
+  sk.sleep = false;
+  // ---- the torso
+  r.vz -= RGRAV; sk.cz += r.vz; sk.ang += r.rotV;
+  const ext = rig.hl * Math.abs(Math.cos(sk.ang)) + rig.hw * Math.abs(Math.sin(sk.ang));
+  if (sk.cz < ext) {
+    sk.cz = ext;
+    if (r.vz < -1.3) {                                   // bounce
+      r.vz = -r.vz * 0.32; r.vx *= 0.7; r.rotV = r.rotV * 0.6 + rnd(-0.1, 0.1); r.vy = (r.vy || 0) + rnd(-0.5, 0.5);
+      burst(e.x, e.y, 5, '#c9a06a', 1.6); A.land(false);
+      if (gore) { bloodSpray(e.x, e.y - 6, e.y, 4, sgn(r.vx), 0.7); stainFloor(e.x, e.y, 3); }
+      sk.L.forEach(l => { l.w += rnd(-0.35, 0.35); });  // the landing jolts every limb
+    } else { r.vz = 0; r.grounded = true; r.vx *= 0.8; }
+  } else r.grounded = false;
+  if (r.grounded) {                                      // standing bodies topple; lying ones settle
+    const flat = sk.ang >= 0 ? Math.PI / 2 : -Math.PI / 2, off = wrapA(flat - sk.ang);
+    r.rotV += sgn(off || 1) * 0.022 * Math.abs(Math.cos(sk.ang)) + off * 0.02;
+    r.rotV *= 0.78;
+    if (Math.abs(off) < 0.02 && Math.abs(r.rotV) < 0.004) { sk.ang = flat; r.rotV = 0; }
+  } else r.rotV *= 0.995;
+  r.z = Math.max(0, sk.cz - ext); r.rot = sk.ang;
+  // ---- the limbs
+  const ca = Math.cos(sk.ang), sa = Math.sin(sk.ang), cy = e.y - sk.cz;
+  let energy = 0;
+  rig.limbs.forEach((l, i) => {
+    const s = sk.L[i];
+    const dx = (l.px - rig.tcx) * S * f, dy = (l.py - rig.tcy) * S;
+    const X = e.x + dx * ca - dy * sa, Y = cy + dx * sa + dy * ca;
+    let ax = 0, ay = 0;
+    if (s.X !== null) { const vx = X - s.X, vy = Y - s.Y; ax = vx - s.vx; ay = vy - s.vy; s.vx = vx; s.vy = vy; }
+    s.X = X; s.Y = Y;
+    // gravity plus the pivot's own acceleration (the body lurches, the limb lags behind)
+    const gx = -ax * 1.2, gy = RGRAV - ay * 1.2;
+    s.w += (gy * Math.cos(s.th) - gx * Math.sin(s.th)) / l.len * 2.2;
+    const rest = (f === 1 ? l.a0 : Math.PI - l.a0) + sk.ang, rel = wrapA(s.th - rest);
+    if (l.k === 'head') s.w -= rel * 0.12;                 // the head mostly goes where the neck goes
+    if (Math.abs(rel) > l.lim) { s.w -= (rel - sgn(rel) * l.lim) * 0.4; s.w *= 0.6; }
+    s.w *= r.grounded ? 0.86 : 0.975;
+    s.w = clamp(s.w, -0.7, 0.7);
+    s.th += s.w;
+    // the floor: a limb that swings into it lands on it
+    const floor = e.y - 1, tipY = Y + l.len * Math.sin(s.th);
+    if (tipY > floor && Y < floor) {
+      const k = clamp((floor - Y) / l.len, -1, 1), c = Math.cos(s.th) >= 0 ? 1 : -1;
+      s.th = Math.atan2(k, c * Math.sqrt(1 - k * k)); s.w *= -0.25;
+    }
+    energy += Math.abs(s.w);
+  });
+  // asleep once everything has stopped moving for a second and a half
+  if (r.grounded && Math.abs(r.vx) < 0.06 && Math.abs(r.rotV) < 0.005 && energy < 0.03) { if (++sk.still > 90) sk.sleep = true; } else sk.still = 0;
+}
+function drawSkeleton(e, mode) {
+  const r = e.rag, sk = r.sk, rig = rigOf(e.sprName), fr = FS[e.sprName].f[rig.fname], S = SCALE, f = e.face || 1;
+  const cx = e.x, cy = e.y - sk.cz;
+  const layer = (k, X, Y, rot, px, py) => {
+    const L = fr.layers[k]; if (!L) return;
+    ctx.save(); ctx.translate(X, Y); ctx.rotate(rot); ctx.scale(f, 1);
+    ctx.drawImage(variant(L, mode), -px * S, -py * S, rig.w * S, rig.h * S); ctx.restore();
+  };
+  for (const k of DRAW_ORDER) {
+    if (e.missing && e.missing.has(k)) continue;
+    if (k === 'body') { layer('body', cx, cy, sk.ang, rig.tcx, rig.tcy); continue; }
+    const i = rig.limbs.findIndex(l => l.k === k); if (i < 0) continue;
+    const l = rig.limbs[i], s = sk.L[i]; if (s.X === null) continue;
+    layer(k, s.X, s.Y, s.th - (f === 1 ? l.a0 : Math.PI - l.a0), l.px, l.py);
+  }
+}
+function ragFlail(e, power) {                          // a hit on a body: every limb gets thrown
+  const r = e.rag; if (!r || !r.sk) return;
+  r.sk.sleep = false; r.sk.still = 0;
+  r.sk.L.forEach(l => { l.w += rnd(-1, 1) * power; });
+}
+function ragShared(e, r) {
   // walls: bodies bounce off them instead of sticking
   if ((e.x < WALL_L - 6 && r.vx < 0) || (e.x > WALL_R + 6 && r.vx > 0)) {
     const hard = Math.abs(r.vx) > 3;
@@ -959,6 +1071,26 @@ function stepRagdoll(e) {
     if (Math.abs(dx) < 10 && Math.abs(e.y - o.y) < 5) { e.x += (dx >= 0 ? 0.6 : -0.6); }
   });
 
+}
+function stepRagdoll(e) {
+  { const r0 = e.rag, rig = r0 && rigOf(e.sprName);
+    if (rig) {
+      if (!r0.sk) skelInit(e, r0, rig);
+      if (r0.sleep !== undefined) delete r0.sleep;
+      e.x += r0.vx; e.y += (r0.vy || 0);
+      r0.vx *= 0.985; r0.vy = (r0.vy || 0) * (r0.grounded ? 0.8 : 0.97);
+      stepSkeleton(e, r0, rig);
+      ragShared(e, r0);
+      return;
+    } }
+  const r = e.rag;
+  if (!r) return;
+  r.vz -= 0.42;
+  r.z += r.vz;
+  e.x += r.vx; e.y += (r.vy || 0);
+  r.vx *= 0.985; r.vy = (r.vy || 0) * (r.grounded ? 0.8 : 0.97);
+  r.rot += r.rotV;
+  ragShared(e, r);
   if (r.z <= 0) {
     r.z = 0;
     if (r.vz < -1.3) {                       // bounce
@@ -1003,6 +1135,7 @@ function stepRagdoll(e) {
 
 function drawRagdoll(e) {
   const spr = e.spr, rig = spr.rig, r = e.rag;
+  if (r && r.sk && rigOf(e.sprName)) { drawSkeleton(e, e.deadT < 5 || impactFrame > 0 ? 'white' : null); return; }
   if (r && FS[e.sprName]) {
     const mode = e.deadT < 5 ? 'white' : null;
     if (r.grounded && Math.abs(r.rotV) < 0.08) {
@@ -2732,14 +2865,16 @@ function finImpact(p, e, o) {
   if (o.slam) { ring(e.x, e.y, '#ffd23f', 6, 56); dust(e.x, e.y, 12, 0); dust(e.x, e.y, 10, -dir); }
   if (o.crater) { ring(e.x, e.y, '#fff', 8, 80); for (let i = 0; i < 14; i++) parts.push({ x: e.x + rnd(-14, 14), y: e.y, vx: rnd(-2.5, 2.5), vy: rnd(-3.5, -1), g: 0.2, life: rnd(20, 34), col: pick(['#8d6e63', '#a1887f', '#5d4037']), s: rnd(2, 3) }); }
   quake(e.x, o.quake || 1);
-  e.finPose = null;
+  const pose0 = e.finPose; e.finPose = null;
   if (e.t.boss) {                                      // bosses take a big chunk instead
     e.hp -= 45; e.finLock = false; e.setState('down', 60); e.poise = e.maxpoise; e.vx = dir * 6;
     if (e.hp <= 0) killEnemy(e);
   } else {
     if (gore && !e.missing.has('head') && Math.random() < 0.55) sever(e, 'head', dir, true);
     e.hp = 0; e.finLock = false; killEnemy(e);
-    if (e.rag) { e.rag.vx = o.vx != null ? o.vx : dir * 7.5; e.rag.vz = o.vz != null ? o.vz : F.lift; e.rag.rotV = dir * 0.35; }
+    if (e.rag) { e.rag.vx = o.vx != null ? o.vx : dir * 7.5; e.rag.vz = o.vz != null ? o.vz : F.lift; e.rag.rotV = dir * 0.35;
+      if (pose0) { e.rag.rot = (pose0.rot || 0) * (e.face || 1); e.rag.z = Math.max(0, pose0.dy || 0); }
+      e.rag.flail = 0.7; }
     if (e.rag && e.pendingRag) { e.rag.vx = e.pendingRag.vx; e.rag.vz = e.pendingRag.vz; e.pendingRag = null; }
   }
   if (roundStats) roundStats.sev++;
@@ -5073,6 +5208,7 @@ function resolvePlayerAttack(mv) {
     r.vx = p.face * (big ? 7.5 : 4) * (mv.spike ? 0.6 : 1); r.vz = mv.spike ? -2 : (mv.name === 'l3' || mv.launch ? 7 : big ? 4.5 : 3);
     r.vy = rnd(-0.8, 0.8); r.rotV = p.face * (big ? 0.35 : 0.22); r.grounded = false; r.z = Math.max(r.z, 2);
     A.crunch(big ? 0.7 : 0.4); hitStop = Math.max(hitStop, 2); shake = Math.max(shake, big ? 4 : 2);
+    if (r.sk) { r.sk.cz += 3; ragFlail(e, big ? 0.6 : 0.35); }
     if (gore) bloodSpray(e.x, e.y - 8 - r.z, e.y, big ? 8 : 4, p.face, 1);
     dust(e.x, e.y, 4, p.face);
   });
@@ -9127,7 +9263,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611260016', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611260923', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -9437,6 +9573,7 @@ function boot() {
     fin: () => ({ super: Math.round(player.super), charges: finCharges(player), st: player.st, slow: slowMo, learned: [...learned] }),
     setSuper: v => { player.super = v; },
     finMove: k => { forceFin = k; },
+    killNear: v => { const e = enemies.find(e => !e.dead && !e.crowd); if (!e) return; e.x = player.x + player.face * 30; e.y = player.y; e.hp = 0; killEnemy(e); if (e.rag) { e.rag.vx = player.face * v; e.rag.vz = 4; e.rag.rotV = player.face * 0.25; e.rag.flail = 0.6; } },
     bodies: () => enemies.filter(e => e.dead && e.rag).map(e => ({ x: Math.round(e.x), y: Math.round(e.y), z: Math.round(e.rag.z), fade: e.fadeT || 0 })),
     nextTo: b => { player.x = b.x - 14; player.y = b.y; player.face = 1; },
     wrecks: () => wrecks.length,
