@@ -80,13 +80,18 @@
     box-shadow:inset 0 3px 0 rgba(255,255,255,.3),inset 0 -4px 0 rgba(0,0,0,.25),0 3px 0 rgba(0,0,0,.4);transition:transform .05s}
   .btn.on{transform:translateY(2px) scale(.95);box-shadow:inset 0 2px 0 rgba(255,255,255,.2),inset 0 -2px 0 rgba(0,0,0,.25),0 1px 0 rgba(0,0,0,.4)}
   #bBlock{font-size:8px;text-shadow:0 1px 0 rgba(0,0,0,.5)}
-  #bPause{font-family:'LC Body',monospace;border-radius:6px}
+  /* the top-right pills: SETTINGS (the pause menu) and BAG (straight into the backpack) */
+  .hpill{width:auto!important;height:24px!important;padding:0 9px;border-radius:5px!important;gap:5px;font-family:'LC Body',monospace;font-size:8px;letter-spacing:.06em;
+         background:rgba(20,15,36,.86)!important;color:#fff;border:2px solid #000;box-shadow:inset 0 2px 0 rgba(255,255,255,.12),inset 0 -2px 0 rgba(0,0,0,.4),0 2px 0 rgba(0,0,0,.45)}
+  .hpill svg{display:block} #bPause svg{color:#b8aed0} #bBag svg{color:#ffb74d}
+  .hpill.on{background:#ff6b35!important;color:#1b1630}
   #bWhistle.go{box-shadow:0 0 0 3px #ff6b35,0 0 22px 6px #ffd23f,inset 0 3px 0 rgba(255,255,255,.5)}
   #loading{font-family:'LC Display',monospace;font-size:20px;letter-spacing:.1em}
   #rotate{font-family:'LC Body',monospace}
   /* nothing to fight: no sticks (menus, cards, scenes, the title) */
   body.touch.noctl #stick,body.touch.noctl #apad,body.touch.noctl #bBlock,body.touch.noctl #bWhistle{display:none}
-  body.touch.nopause #bPause{display:none}
+  body.touch.nopause #bPause,body.touch.nopause #bBag{display:none}
+  #bBag{display:none} body.touch #bBag{display:flex}
   .lab{font-size:8px}
   @media (orientation:portrait){ body.touch #rotate{display:flex} body.touch #pad{display:none} }
 </style>
@@ -98,7 +103,8 @@
   <div id="apad"><span class="lab u">JUMP</span><span class="lab d">GRAB</span><span class="lab l">HIT</span><span class="lab r">HIT</span><div id="aknob"><span class="lab c">HOLD</span></div></div>
   <div class="btn" id="bBlock">BLOCK</div>
   <div class="btn" id="bWhistle">FINISH</div>
-  <div class="btn" id="bPause">II</div>
+  <div class="btn hpill" id="bPause"><svg viewBox="0 0 10 10" width="12" height="12" shape-rendering="crispEdges"><path fill="currentColor" d="M4 0h2v2h1v-1h1v1h1v1h-1v1h2v2h-2v1h1v1h-1v1h-1v-1h-1v2h-2v-2h-1v1h-1v-1h-1v-1h1v-1h-2v-2h2v-1h-1v-1h1v-1h1v1h1zM4 4v2h2v-2z"/></svg><span>SETTINGS</span></div>
+  <div class="btn hpill" id="bBag"><svg viewBox="0 0 10 10" width="12" height="12" shape-rendering="crispEdges"><path fill="currentColor" d="M3 0h4v1h1v2h1v7h-8v-7h1v-2h1zM4 1v1h2v-1zM3 5v2h4v-2z"/></svg><span>BAG</span></div>
 </div>
 <div id="rotate"><div class="ph"></div>TURN YOUR PHONE SIDEWAYS<small>Last Class plays in landscape</small></div>
 <div id="loading">WARMING UP…</div>
@@ -464,6 +470,7 @@ function keyDown(k, rep) {
   if (k === 'b') toggleGore();
   if (state === 'levelup' && (k === 'p' || k === 'escape')) { menuQ.push('k'); return; }
   if (k === 't' && state === 'play' && !paused) treeReq = true;
+  if (k === 'i' && state === 'play' && !paused) { bagNow(); return; }
   if (k === 'p' || k === 'escape') togglePause();
   if (paused) { pauseKey(k); return; }
   menuQ.push(k);
@@ -565,7 +572,7 @@ function setupTouch() {
       if (!r.width || t.clientX < r.left - m || t.clientX > r.right + m || t.clientY < r.top - m || t.clientY > r.bottom + m) return false;
       const el = document.elementFromPoint(t.clientX, t.clientY);
       if (el && el.closest && el.closest('#apad, #stick')) return false;   // on the attack pad itself: that's an attack
-      return !(el && el.closest && el.closest('.btn, #bPause') && el.closest('.btn, #bPause') !== bb);
+      return !(el && el.closest && el.closest('.btn, #bPause, #bBag') && el.closest('.btn, #bPause, #bBag') !== bb);
     };
     addEventListener('touchstart', e => {
       for (const t of e.changedTouches) {
@@ -586,7 +593,7 @@ function setupTouch() {
      that lands anywhere on the left half becomes the stick, anywhere on the right half the
      action pad - unless it lands on a button. Lift it and the pad goes home. */
   const floating = () => !SET.padPos || SET.padPos === 'float';
-  const onBtn = t => { const el = document.elementFromPoint(t.clientX, t.clientY); return el && el.closest && el.closest('.btn, #bPause'); };
+  const onBtn = t => { const el = document.elementFromPoint(t.clientX, t.clientY); return el && el.closest && el.closest('.btn, #bPause, #bBag'); };
   addEventListener('touchstart', e => {
     if (!floating() || ctlShown !== 3) return;
     let mine = false;
@@ -628,6 +635,12 @@ function setupTouch() {
     const tp = e => { e.preventDefault(); A.init(); A.resume(); togglePause(); };
     bp.addEventListener('touchstart', tp, { passive: false });
     bp.addEventListener('mousedown', tp);
+  }
+  const bg = document.getElementById('bBag');
+  if (bg) {
+    const tb = e => { e.preventDefault(); A.init(); A.resume(); bagNow(); };
+    bg.addEventListener('touchstart', tb, { passive: false });
+    bg.addEventListener('mousedown', tb);
   }
 }
 /* ---------- the action pad: a second stick, worked with swipes ----------
@@ -738,6 +751,7 @@ cv.addEventListener('pointerdown', e => {
   else if (paused) pauseTap(x, y);
   else if (state === 'title' && newerBuild && x > UPDATE_BOX.x && y > UPDATE_BOX.y && y < UPDATE_BOX.y + UPDATE_BOX.h) location.reload();
   else if (state === 'title') titleTap(x, y);
+  else if (state === 'play' && hudButtonAt(x, y)) { const b = hudButtonAt(x, y); if (b === 'bag') bagNow(); else togglePause(); }
   else if (state === 'play' && e.pointerType !== 'mouse' && portraitTouch(e)) { /* taunt */ }
   else if (state === 'select') selectTap(x, y);
   else if (state === 'loot') lootTap(x, y);
@@ -3005,7 +3019,7 @@ function stepClassTrait(p) {
   }
 }
 function drawClassTrait() {
-  const p = player, x = HUD_X + HUD_W + 7, y = 7;
+  const p = player, x = HUD_X + 4, y = HUD_Y + HUD_H + 5;
   panel(x - 4, y - 2, CLS === 'bb' ? 32 : 68, CLS === 'bb' ? 11 : 16);              // a little chip beside the panel
   ctx.font = 'bold 5px monospace'; ctx.textAlign = 'left';
   if (CLS === 'cyc') {
@@ -4540,6 +4554,10 @@ const SLOT_PART = { GEAR: [BODY_X - 4, 128], HANDS: [BODY_X - 26, 170], BODY: [B
 const slotRect = sl => ({ x: SLOT_BOX[sl].x, y: SLOT_BOX[sl].y, w: 36, h: 36 });
 const BIN = { x: 372, y: 44, w: 100, h: 56 }, ROT = { x: 372, y: 108, w: 100, h: 22 };
 const bagDone = () => ({ x: LW / 2 - 80, y: 246, w: 160, h: 20 });
+function bagNow() {                                     // the BAG button / I key: straight into the backpack, mid-fight too
+  if (state !== 'play' || paused || menu || scene || !player || player.dead) return;
+  openBag('pause');
+}
 function openBag(from) {
   bagCard = { from, sel: bag.length ? 0 : -1, t: 0, sure: 0, msg: null, held: null, mx: 0, my: 0 };
   state = 'bag'; stateT = 0; M.muffle(true); A.round();
@@ -5047,15 +5065,16 @@ function drawWeaponHUD() {
   const w = player.weapon;
   if (!w) return;
   const W = WEAPONS[w.t];
-  panel(HUD_X, HUD_Y + HUD_H + 3, 74, 13);
-  ctx.save(); ctx.translate(HUD_X + 9, HUD_Y + HUD_H + 10); ctx.scale(0.5, 0.5); drawWeaponShape(w.t, false); ctx.restore();
-  ctx.font = 'bold 6px monospace'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.fillText(W.name, HUD_X + 20, HUD_Y + HUD_H + 9);
-  for (let i = 0; i < W.uses; i++) { ctx.fillStyle = i < w.uses ? '#ffd23f' : '#3a3150'; ctx.fillRect(HUD_X + 20 + i * 4, HUD_Y + HUD_H + 11, 3, 2); }
+  const wx = HUD_X + 78, wy = HUD_Y + HUD_H + 3;
+  panel(wx, wy, 74, 13);
+  ctx.save(); ctx.translate(wx + 9, wy + 7); ctx.scale(0.5, 0.5); drawWeaponShape(w.t, false); ctx.restore();
+  ctx.font = 'bold 6px monospace'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.fillText(W.name, wx + 20, wy + 6);
+  for (let i = 0; i < W.uses; i++) { ctx.fillStyle = i < w.uses ? '#ffd23f' : '#3a3150'; ctx.fillRect(wx + 20 + i * 4, wy + 8, 3, 2); }
 }
 function drawStyle() {
   drawWeaponHUD();
   const r = styleRank(), R = STYLE_RANKS[r];
-  const x = LW - 10, y = 58, into = (style.pts % 100) / 100;
+  const x = LW - 10, y = 52, into = (style.pts % 100) / 100;
   ctx.textAlign = 'right';
   const big = r >= 4 ? 40 : r >= 2 ? 30 : 20, wob = style.flash > 0 ? Math.round(Math.sin(style.flash) * 2) : 0;
   bigText(R.l, x, y + wob, big, R.c);
@@ -8640,7 +8659,7 @@ function nodeRect(n) { return { x: 12 + n[2] * 154, y: 62 + n[3] * 36, w: 146, h
 const treeTabs = () => (ngPlus ? ABS_BRANCHES : BRANCHES);
 const tabRect = i => { const n = treeTabs().length, w = Math.floor((LW - 20) / n); return { x: 10 + i * w, y: 30, w: w - 4, h: 18 }; };
 let treeReq = false, autoTree = false, calmT = 0, lvlBanner = null;
-const LVL_BADGE = { x: 252, y: 8, w: 104, h: 16 };
+const LVL_BADGE = { x: 188, y: 40, w: 104, h: 15 };
 function openLevelUp() { openTree(); }
 function openTree() {
   webOpen(); return;
@@ -8822,7 +8841,7 @@ function drawXPBar() {
     ctx.fillStyle = on ? '#b388ff' : '#7e57c2'; ctx.fillRect(b.x, b.y, b.w, b.h);
     ctx.fillStyle = '#ffd23f'; ctx.fillRect(b.x, b.y, b.w, 2);
     ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = on ? '#1b1630' : '#fff';
-    ctx.fillText('★ SKILL POINT' + (pendingPicks > 1 ? ' x' + pendingPicks : '') + '  ' + (isTouch() && !GP.active ? 'TAP' : GP.active ? 'SELECT' : '[T]'), b.x + b.w / 2, b.y + 12);
+    ctx.fillText('SKILL POINT' + (pendingPicks > 1 ? ' x' + pendingPicks : '') + '  ' + (isTouch() && !GP.active ? 'TAP' : GP.active ? 'SELECT' : '[T]'), b.x + b.w / 2, b.y + 11);
     ctx.textAlign = 'left';
   }
   if (lvlBanner && state === 'play' && !(banner && banner.t > 0) && !ticker) {   // the big moment, once the round title has gone
@@ -9842,6 +9861,7 @@ function drawItemIcon(it, x, y, k) {
   else if (it.ico === 'card') { R(0, 2, 9, 5, it.col); R(1, 3, 3, 1, '#fff'); R(1, 5, 6, 1, '#000'); R(7, 3, 1, 1, '#000'); }
   else if (it.ico === 'phones') { R(2, 0, 5, 1, it.col); R(1, 1, 1, 4, it.col); R(7, 1, 1, 4, it.col); R(0, 4, 3, 4, it.col); R(6, 4, 3, 4, it.col); }
   else if (it.ico === 'can') { R(3, 0, 3, 1, '#bdbdbd'); R(2, 1, 5, 7, it.col); R(2, 3, 5, 2, '#000'); R(3, 3, 1, 1, '#fff'); }
+  else if (it.ico === 'pack') { R(2, 0, 5, 1, it.col); R(1, 1, 1, 2, it.col); R(7, 1, 1, 2, it.col); R(1, 2, 7, 6, it.col); R(2, 4, 5, 2, '#14101f'); R(3, 4, 3, 1, it.col); }
   else if (it.ico === 'bell') { R(0, 2, 2, 5, it.col); R(7, 2, 2, 5, it.col); R(2, 4, 5, 1, it.col); R(0, 2, 1, 2, '#fff6c8'); }
   else if (it.ico === 'trophy') { R(1, 0, 7, 1, it.col); R(0, 1, 2, 2, it.col); R(7, 1, 2, 2, it.col); R(2, 1, 5, 4, it.col); R(4, 5, 1, 2, it.col); R(2, 7, 5, 1, it.col); R(3, 2, 1, 1, '#fff'); }
   else if (it.ico === 'mega') { R(0, 3, 2, 3, '#424242'); R(2, 2, 2, 5, it.col); R(4, 1, 2, 7, it.col); R(6, 0, 2, 9, it.col); R(3, 7, 1, 2, '#424242'); }
@@ -10898,7 +10918,8 @@ function drawWipe() {
 /* ============================== HUD ==============================
    One framed panel top-left (portrait, health with a damage trail, stamina, finisher pips, fury, level),
    the score top-right counting up, everything in the same pixel style. */
-const HUD = { ghost: 1, ghostT: 0, heal: 0, lastHp: null, score: 0, pop: 0, lastCombo: 0, comboPop: 0, hit: 0 };
+addEventListener('mousemove', e => { const r = cv.getBoundingClientRect(); HUD.mx = (e.clientX - r.left) / r.width * LW; HUD.my = (e.clientY - r.top) / r.height * LH; });
+const HUD = { mx: -1, my: -1, ghost: 1, ghostT: 0, heal: 0, lastHp: null, score: 0, pop: 0, lastCombo: 0, comboPop: 0, hit: 0 };
 function stepHUD() {
   const p = player; if (!p) return;
   const r = p.hp / p.maxhp;
@@ -10988,16 +11009,37 @@ function drawStatusPanel() {
   ctx.textAlign = 'left';
   drawXPBar(); drawClassTrait();
 }
-function drawScoreBlock() {
-  const x = LW - 8, sc = String(Math.round(HUD.score)).padStart(6, '0'), k = HUD.pop > 0 ? 1 : 0;
-  ctx.textAlign = 'right'; ctx.font = '20px "LC Display"';
-  ctx.fillStyle = '#000'; ctx.fillText(sc, x + 1, 21 - k + 1);
-  ctx.fillStyle = HUD.pop > 3 ? '#fff6c8' : '#ffd23f'; ctx.fillText(sc, x, 21 - k);
-  ctx.font = 'bold 8px monospace'; ctx.fillStyle = '#fff';
-  ctx.fillText(tutorial ? 'TRAINING' : endlessMode ? 'ENDLESS  ' + ROUNDS[round].name : ROUNDS[Math.min(round, ROUNDS.length - 1)].name + '  ' + (Math.min(round, ROUNDS.length - 1) + 1) + '/' + ROUNDS.length, x, 31);
-  ctx.font = 'bold 6px monospace'; ctx.fillStyle = '#6b6388';
-  ctx.fillText('BEST ' + String(Math.max(best, score)).padStart(6, '0') + (isTouch() ? '' : '   P = pause'), x, 39);
+const HUD_BTNS = () => [{ id: 'bag', x: LW - 128, y: 5, w: 50, h: 16, lab: 'BAG', key: 'I' }, { id: 'set', x: LW - 74, y: 5, w: 68, h: 16, lab: 'SETTINGS', key: 'P' }];
+function drawHudButtons() {                             // mouse players get the same two buttons the phone has (top right)
+  if (isTouch() && !GP.active) return;
+  for (const b of HUD_BTNS()) {
+    const hov = HUD.mx > b.x && HUD.mx < b.x + b.w && HUD.my > b.y && HUD.my < b.y + b.h;
+    plate(b.x, b.y, b.w, b.h, hov ? '#ff6b35' : 'rgba(20,15,36,.86)', b.id === 'bag' ? '#ffb74d' : '#b8aed0');
+    if (b.id === 'bag') drawItemIcon({ slot: 'GEAR', ico: 'pack', col: hov ? '#1b1630' : '#ffb74d' }, b.x + 6, b.y + 4, 0.9);
+    else drawGearIcon(b.x + 6, b.y + 4, hov ? '#1b1630' : '#b8aed0');
+    ctx.font = 'bold 7px monospace'; ctx.textAlign = 'left'; ctx.fillStyle = hov ? '#1b1630' : '#fff'; ctx.fillText(b.lab, b.x + 17, b.y + 11);
+    if (!GP.active) { ctx.font = '5px monospace'; ctx.fillStyle = hov ? '#1b1630' : '#6b6388'; ctx.textAlign = 'right'; ctx.fillText(b.key, b.x + b.w - 3, b.y + 11); }
+  }
   ctx.textAlign = 'left';
+}
+function drawGearIcon(x, y, c) {
+  ctx.fillStyle = c;
+  for (const [a, b, w, h] of [[3, 0, 3, 9], [0, 3, 9, 3], [1, 1, 7, 7]]) ctx.fillRect(x + a, y + b, w, h);
+  ctx.fillStyle = '#14101f'; ctx.fillRect(x + 3, y + 3, 3, 3);
+}
+function hudButtonAt(x, y) { if (isTouch() && !GP.active) return null; const b = HUD_BTNS().find(q => x > q.x && x < q.x + q.w && y > q.y - 2 && y < q.y + q.h + 2); return b ? b.id : null; }
+function drawScoreBlock() {                              // the score sits top centre now, the round under it
+  const x = LW / 2, sc = String(Math.round(HUD.score)).padStart(6, '0'), k = HUD.pop > 0 ? 1 : 0;
+  ctx.textAlign = 'center'; ctx.font = '20px "LC Display"';
+  ctx.fillStyle = '#000'; ctx.fillText(sc, x + 1, 19 - k + 1);
+  ctx.fillStyle = HUD.pop > 3 ? '#fff6c8' : '#ffd23f'; ctx.fillText(sc, x, 19 - k);
+  ctx.font = 'bold 7px monospace'; ctx.fillStyle = '#fff';
+  const ri = Math.min(round, ROUNDS.length - 1);
+  ctx.fillText(tutorial ? 'TRAINING' : endlessMode ? 'ENDLESS  ' + ROUNDS[round].name : ROUNDS[ri].name + '  ' + (ri + 1) + '/' + ROUNDS.length, x, 28);
+  ctx.font = '5px monospace'; ctx.fillStyle = '#6b6388';
+  ctx.fillText('BEST ' + String(Math.max(best, score)).padStart(6, '0'), x, 35);
+  ctx.textAlign = 'left';
+  drawHudButtons();
 }
 function drawHUD() {
   { const g = ctx.createLinearGradient(0, 0, 0, 52);
@@ -11020,7 +11062,7 @@ function drawHUD() {
   if (combo >= 2) {
     const grow = 1 + HUD.comboPop * 0.05;
     ctx.save();
-    ctx.translate(12, 86);
+    ctx.translate(12, 92);
     ctx.scale(grow, grow);
     ctx.textAlign = 'left';
     ctx.font = (combo >= 10 ? 30 : 20) + 'px "LC Display"';
@@ -11036,7 +11078,7 @@ function drawHUD() {
     if (combo >= (perk('life') ? 8 : 12)) { ctx.fillStyle = '#8bc34a'; ctx.fillText('LIFESTEAL', 1, 26); }
     ctx.restore();
     ctx.fillStyle = 'rgba(255,255,255,.3)';
-    ctx.fillRect(12, 90, 44 * (comboT / 100), 2);
+    ctx.fillRect(12, 96, 44 * (comboT / 100), 2);
   }
   ctx.textAlign = 'left';
 }
@@ -11065,7 +11107,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611272053', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611272108', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -11212,17 +11254,17 @@ function layoutTouch() {
     set('apad', { width: px(P), height: px(P), right: px(W - rc - P / 2), left: '', bottom: px(up), opacity: op });
     set('bBlock', { width: px(B), height: px(B), right: px(W - rc - B / 2), bottom: px(up + P + 22), opacity: op });
     const finUp = up + P + 22 + B + 10;
-    if (finUp + Wh < H - 58) set('bWhistle', { width: px(Wh), height: px(Wh), right: px(W - rc - Wh / 2), bottom: px(finUp), opacity: op });
+    if (finUp + Wh < H - 74) set('bWhistle', { width: px(Wh), height: px(Wh), right: px(W - rc - Wh / 2), bottom: px(finUp), opacity: op });
     else if (up >= Wh + 14) set('bWhistle', { width: px(Wh), height: px(Wh), right: px(W - rc - Wh / 2), bottom: px(Math.max(6, (up - Wh) / 2)), opacity: op });   // no room above: under the pad
     else set('bWhistle', { width: px(Wh), height: px(Wh), right: px(W - rc + B / 2 + 12), bottom: px(up + P + 22 + (B - Wh) / 2), opacity: op });            // last resort: beside BLOCK
-    set('bPause', { right: px(W - rc - 18), top: px(10) });
+    set('bPause', { right: px(Math.max(6, W - rc - 44)), top: px(8) }); set('bBag', { right: px(Math.max(6, W - rc - 44)), top: px(38) });
   } else {
     const up = low ? 8 : Math.round(Math.max(8, H * 0.42 - P / 2));
     set('stick', { width: px(P), height: px(P), left: px(8), right: '', bottom: px(up), opacity: op });
     set('apad', { width: px(P), height: px(P), right: px(8), left: '', bottom: px(up), opacity: op });
     set('bBlock', { width: px(B), height: px(B), right: px(8 + P + 26), bottom: px(up), opacity: op });
     set('bWhistle', { width: px(Wh), height: px(Wh), right: px(8 + P + 26 + (B - Wh) / 2), bottom: px(up + B + 12), opacity: op });
-    set('bPause', { right: px(8), top: px(8) });
+    set('bPause', { right: px(8), top: px(8) }); set('bBag', { right: px(8 + 96), top: px(8) });
   }
 }
 /* the sticks only show when there is fighting to do; on menus, cards and scenes they'd just be in the way */
