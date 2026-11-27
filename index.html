@@ -710,15 +710,16 @@ cv.addEventListener('pointerdown', e => {
   else if (state === 'intro') introTap(x, y);
   else if (state === 'levelup') levelUpTap(x, y);
   else if (state === 'scene' && x >= SKIP_BTN.x - 6 && y <= SKIP_BTN.y + SKIP_BTN.h + 8) sceneSkipReq = true;
+  else if (state === 'over' && canRetry()) overTap(x, y);
   else if (['scene', 'over', 'win', 'stage', 'clear', 'credits', 'wake'].includes(state)) tapGo = true;
   else if (state === 'play' && pendingPicks > 0 && x > LVL_BADGE.x - 10 && x < LVL_BADGE.x + LVL_BADGE.w + 10 && y > LVL_BADGE.y - 10 && y < LVL_BADGE.y + LVL_BADGE.h + 10) treeReq = true;
 });
 function bagXY(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * LW, (e.clientY - r.top) / r.height * LH]; }
 const heldBy = e => !bagCard.held || bagCard.held.pid === e.pointerId;
-addEventListener('pointermove', e => { if (state === 'levelup' && lvlCard && !ngPlus) { const [x, y] = bagXY(e); webPtrMove(x, y, e.pointerId); } });
-addEventListener('pointerup', e => { if (state === 'levelup' && lvlCard && !ngPlus) { const [x, y] = bagXY(e); webUp(x, y, e.pointerId); } });
+addEventListener('pointermove', e => { if (state === 'levelup' && lvlCard) { const [x, y] = bagXY(e); webPtrMove(x, y, e.pointerId); } });
+addEventListener('pointerup', e => { if (state === 'levelup' && lvlCard) { const [x, y] = bagXY(e); webUp(x, y, e.pointerId); } });
 addEventListener('pointercancel', e => { if (state === 'levelup' && lvlCard && lvlCard.ptrs) { delete lvlCard.ptrs[e.pointerId]; lvlCard.pinch = null; } });
-cv.addEventListener('wheel', e => { if (state === 'levelup' && lvlCard && !ngPlus) { e.preventDefault(); const [x, y] = bagXY(e); webZoom(lvlCard, e.deltaY < 0 ? 1.15 : 0.87, x, y); } }, { passive: false });      // only the finger holding the item moves it
+cv.addEventListener('wheel', e => { if (state === 'levelup' && lvlCard) { e.preventDefault(); const [x, y] = bagXY(e); webZoom(lvlCard, e.deltaY < 0 ? 1.15 : 0.87, x, y); } }, { passive: false });      // only the finger holding the item moves it
 addEventListener('pointermove', e => { if (state === 'bag' && bagCard && heldBy(e)) { const [x, y] = bagXY(e); bagMove(x, y); } });
 addEventListener('pointerup', e => { if (state === 'bag' && bagCard && heldBy(e)) { const [x, y] = bagXY(e); bagUp(x, y); } });
 addEventListener('pointercancel', e => { if (state === 'bag' && bagCard && bagCard.held && heldBy(e)) bagUp(-1, -1); });
@@ -2016,9 +2017,14 @@ function collideProps(a) {
     if (Math.abs(ox) < ow && Math.abs(oy) < od) {
       const penX = ow - Math.abs(ox), penY = od - Math.abs(oy);
       if (penX < penY * 2.0) {
+        const push = -sgn(ox || 1);
         a.x = o.x + sgn(ox || 1) * ow;
-        if (o.heavy < 9) o.vx += -sgn(ox || 1) * 0.5;
-        a.vx *= 0.35;
+        if (o.heavy < 9 && a === player && Math.sign(a.vx) === push && Math.abs(a.vx) > 0.2) {   // leaning into it: it slides at your pace, no stutter
+          const v = a.vx * 0.7; o.vx += (v - o.vx) * 0.6; a.vx = v;
+        } else {
+          if (o.heavy < 9) o.vx += push * 0.5;
+          a.vx *= 0.35;
+        }
       } else {
         a.y = o.y + sgn(oy || 1) * od;
         if (o.heavy < 9) o.vy += -sgn(oy || 1) * 0.3;
@@ -2347,6 +2353,14 @@ function variant(o, mode) {
   if (mode === 'ghostR') return o.gr || (o.gr = tint(o.img, '#ff5a5a'));
   return o.img;
 }
+/* the white hit-flash of each frame used to be made the first time someone got hit in it - a hitch right
+   on the impact. Now it's made a few at a time in the quiet ticks after a fighter walks in. */
+const WARM = { q: [], seen: new Set() };
+function warmSheet(name) {                      // only the frames you are in when a hit lands
+  if (WARM.seen.has(name) || !FS[name]) return; WARM.seen.add(name);
+  for (const fn in FS[name].f) { if (!/hurt|stag|idle0|block|knock|fall|down|air/.test(fn)) continue; const fr = FS[name].f[fn]; if (fr.layers) { for (const k in fr.layers) WARM.q.push(fr.layers[k]); } else if (fr.img) WARM.q.push(fr); }
+}
+function stepWarm() { for (let i = 0; i < 1 && WARM.q.length; i++) { const o = WARM.q.shift(); if (o && o.img && !o.white) variant(o, 'white'); } }
 
 function sliceFrameSets() {
   if (typeof FRAME_SETS === 'undefined') return;
@@ -2497,7 +2511,7 @@ function gaitFrame(a, sheet, names) {           // which frame of a walk cycle, 
   if (a.gaitFr !== fr) { a.gaitFr = fr; a.gaitD0 = d; }
   // the body follows the feet: while a foot is planted the drawn body lags behind the real
   // position, and catches up as the next foot lands. A step, not a glide.
-  a.gaitOff = -Math.min(cyc / names.length, d - a.gaitD0) * 0.6 * (a.mdir || 0);
+  a.gaitOff = 0;                                  // (the old step-lag snapped the body ~5px each step: read as a shiver)
   return fr;
 }
 function trackSteps(a) {                         // distance actually covered this tick (depth counts a bit less)
@@ -3114,6 +3128,11 @@ function finImpact(p, e, o) {
   }
   if (roundStats) roundStats.sev++;
   styleAdd(p.envFin ? 'env' : 'finish', p.envFin ? 45 : 35);
+  healOrbs(e.x, e.y - 20, p.envFin ? 4 : 3);                     // a finisher always pays out in health: worth the risk when you're hurt
+}
+/* green orbs (God of War, Doom's glory kills): pop out of a finished enemy and fly to you on their own */
+function healOrbs(x, y, n) {
+  for (let i = 0; i < n; i++) pickups.push({ orb: true, x: x + rnd(-6, 6), y: y + 20 + rnd(-3, 3), z: 20, vx: rnd(-1.6, 1.6), vz: rnd(1.5, 3.2), t: 0 });
 }
 function startFinisher(p, e) {
   logEv('finisher');
@@ -3463,7 +3482,7 @@ const KICKS = { yoga: ['air', 'airL'], bb: ['air', 'airL'], cyc: ['air', 'airL']
 function moveTL(name) { const t = C().tl; return (t && t[name]) || ATTACK_TL[name]; }
 function applyClass(p) {
   const c = C();
-  p.hp = p.maxhp = c.hp;                   // (the outfit is picked when he is drawn)
+  p.hp = p.maxhp = c.hp + skillFx('hp');   // (the outfit is picked when he is drawn)
 }
 
 const GRAV = 0.34, JUMP_V = 5.8;
@@ -4284,12 +4303,15 @@ function continueRun() {
   resetGame();
   learned = new Set((cp.skills || []).concat(BASE_SKILLS)); passives = cp.pas || {}; level = cp.lvl || 1; xp = cp.xp || 0; pendingPicks = cp.pts || 0;
   let refund = false;
-  if (cp.web && cp.web.includes(webStart())) webSet = new Set(cp.web.filter(id => WEBI[id]));
+  if (ngPlus && !(cp.web && cp.web.length > 12)) {          // a NEW GAME+ save from the old tree: the full web, plus the ABSURD picks it had
+    learned = new Set((cp.skills || []).concat(BASE_SKILLS)); passives = {}; ngWebBase();
+    Object.keys(ABSURD).forEach(id => { if (learned.has(id) && WEBI['ab_' + id]) webSet.add('ab_' + id); });
+  } else if (cp.web && cp.web.includes(webStart())) webSet = new Set(cp.web.filter(id => WEBI[id]));
   else if (!ngPlus) {                                   // a save from before the web: start fresh on it, with every point back
     learned = new Set(BASE_SKILLS); passives = {}; webSet = new Set([webStart()]);
     pendingPicks = Math.max(pendingPicks, (level - 1) * 2); refund = level > 1;
   }
-  player.maxhp += skillFx('hp');
+  player.maxhp = C().hp + skillFx('hp');
   for (const sl of SLOTS) if (cp.gear && cp.gear[sl] && ITEMS[cp.gear[sl]]) { gear[sl] = cp.gear[sl]; player.maxhp += ITEMS[gear[sl]].fx.hp || 0; }
   buildSkin();
   seenLoot = new Set(cp.seen || []); style.sssStage = cp.styleSSS || {};
@@ -4307,7 +4329,7 @@ function continueRun() {
 function saveBest() {
   saveEndless();
   if (endlessMode) return;                                       // endless keeps its own record
-  if (state === 'over' || state === 'win') clearCheckpoint();
+  if (state === 'win') clearCheckpoint();               // a death keeps the save: you can try the round again
   if (score > best) {
     best = score; newBest = true;
     try { localStorage.setItem('lastclass.best', String(best)); } catch (e) { /* storage can be blocked */ }
@@ -4615,7 +4637,7 @@ function drawBag() {
 }
 
 /* -------- pause menu ------- */
-const PAUSE_ITEMS = ['RESUME', 'BACKPACK', 'SKILL TREE', 'SETTINGS', 'CONTROLS', 'RESTART', 'QUIT TO TITLE'];
+const PAUSE_ITEMS = ['RESUME', 'BACKPACK', 'SKILL WEB', 'SETTINGS', 'CONTROLS', 'RESTART', 'QUIT TO TITLE'];
 function togglePause() {
   if (state !== 'play' && !paused) return;
   paused = !paused; pauseSel = 0;
@@ -4636,7 +4658,7 @@ function pauseKey(k) {
 function pauseChoose(i) {
   const it = PAUSE_ITEMS[i];
   if (it === 'RESUME') togglePause();
-  else if (it === 'SKILL TREE') { togglePause(); if (state === 'play') openTree(); }
+  else if (it === 'SKILL WEB') { togglePause(); if (state === 'play') openTree(); }
   else if (it === 'BACKPACK') { togglePause(); if (state === 'play') openBag('pause'); }
   else if (it === 'SETTINGS') openMenu('settings', 'pause');
   else if (it === 'CONTROLS') openMenu('controls', 'pause');
@@ -4665,6 +4687,7 @@ function spawnEnemy(type) {
   e.queue = []; e.cool = rnd(20, 50);
   e.hasToken = false;
   e.setState('enter');
+  if (e.sprName && !t.crowd) warmSheet(e.sprName);
   enemies.push(e);
   if (!t.crowd) e.barkIn = rnd(25, 70) | 0;
   if (type === 'yoga') { e.x = 386; e.y = DEPTH_TOP + 8; e.face = -1; }
@@ -4969,6 +4992,7 @@ function enemyGuard(e, mv) {
 }
 function playerHit(e, mv) {
   const p0 = player;
+  if (!e.crowd) haptic(mv.knockdown || mv.name === 'heavy' ? [16, 0.5] : [7, 0.25], true);
   if (mv.name === 'l3' && perk('kick3') && !mv.knockdown) mv = Object.assign({}, mv, { knockdown: true });
   if (e.st === 'eblock' && mv.guardBreak) {             // a heavy smashes the guard open: stagger -> finisher
     e.setState('stagger', 64); e.poise = e.maxpoise; e.blockPunish = false;
@@ -5190,7 +5214,23 @@ function killEnemy(e) {
 /* damage going TO the player; returns how it resolved */
 const EVLOG = [];
 let dmgTaken = 0;
-function logEv(k) { EVLOG.push(k); if (EVLOG.length > 300) EVLOG.shift(); }
+function logEv(k) { EVLOG.push(k); if (EVLOG.length > 300) EVLOG.shift(); const h = HAPTIC[k]; if (h) haptic(h); }
+/* feeling it in your hands: the phone buzzes (and a controller rumbles) on the big moments - lightly when you
+   land hits, harder when you're hit, a double tap on a parry, a long one on a finisher */
+const HAPTIC = { hit: [38, 1], 'hit-red': [60, 1], parry: [[14, 40, 22], 0.6], perfect: [[14, 40, 22], 0.6], counter: [18, 0.5], finisher: [70, 0.8],
+                 guardbreak: [30, 0.7], fury: [[30, 50, 30, 50, 60], 0.9], dfa: [45, 0.9], tanked: [20, 0.4], eblock: [10, 0.3] };
+let hapT = 0;
+function haptic(h, small) {
+  if (SET.haptic === false) return;
+  const now = performance.now(); if (small && now - hapT < 90) return; hapT = now;
+  const [pat, mag] = Array.isArray(h) ? h : [h, 0.5];
+  try { if (isTouch() && navigator.vibrate) navigator.vibrate(pat); } catch (e) { /* not allowed here */ }
+  try {
+    const gp = [...(navigator.getGamepads ? navigator.getGamepads() : [])].find(q => q && q.connected), va = gp && gp.vibrationActuator;
+    const dur = Array.isArray(pat) ? pat.reduce((a, b) => a + b, 0) : pat;
+    if (va && va.playEffect) va.playEffect('dual-rumble', { duration: dur, strongMagnitude: mag, weakMagnitude: Math.min(1, mag + 0.2) }).catch(() => {});
+  } catch (e) { /* no rumble */ }
+}
 
 function hitPlayer(e, mv) {
   const p = player;
@@ -5578,7 +5618,7 @@ function updatePlayer() {
   } else if (mag > 0.05) {
     const dir = Math.abs(ix) > 0.2 ? sgn(ix) : 0;
     // hold a direction and you build into a run
-    if (dir && dir === p.runDir && mag > 0.7) p.runT++;
+    if (dir && dir === p.runDir && mag > (p.runT > 16 ? 0.45 : 0.7)) p.runT++;   // once running, a thumb that eases off a little keeps running
     else { p.runT = 0; p.runDir = dir; }
     const running = p.runT > 16;
     // skid when you reverse at speed
@@ -5597,7 +5637,7 @@ function updatePlayer() {
     let gait = 1;
     if (wind === 1) {                                         // slowest as a foot lands, quickest as the other swings through
       const cyc = strideOf(C().sheet, running ? RUN4 : WALK6), ph = ((p.stepD || 0) % cyc) / cyc;
-      gait = running ? 1 - 0.2 * Math.cos(4 * Math.PI * (ph - 1 / 8)) : 1 - 0.32 * Math.cos(4 * Math.PI * (ph - 1 / 12));
+      gait = running ? 1 - 0.05 * Math.cos(4 * Math.PI * (ph - 1 / 8)) : 1 - 0.07 * Math.cos(4 * Math.PI * (ph - 1 / 12));   // a hint of footfall; more read as a shudder
     }
     p.vx += ix * (running ? 0.92 : 0.5) * wind * spd * gait;
     p.vy += iy * (running ? 0.52 : 0.42) * wind * spd * gait;
@@ -6783,7 +6823,7 @@ function domino(o, e) {
 function update() {
   stateT++;
   tickBuf();
-  if (state !== 'select' && state !== 'loot' && state !== 'bag' && state !== 'title' && state !== 'levelup') menuQ.length = 0;
+  if (state !== 'select' && state !== 'loot' && state !== 'bag' && state !== 'title' && state !== 'levelup' && state !== 'over') menuQ.length = 0;
   if (menu) { menuQ.length = 0; clearEdges(); return; }
   if (state === 'play' && !paused && isPortrait()) togglePause();
   if (paused) { clearEdges(); return; }
@@ -6801,9 +6841,12 @@ function update() {
   if (state === 'loot') { updateLoot(); return; }
   if (state === 'bag') { updateBag(); return; }
   if (state === 'over' || state === 'win') {
+    const opts = state === 'over' && canRetry();
+    for (const k of menuQ.splice(0)) if (opts && ['w', 's', 'arrowup', 'arrowdown'].includes(k)) { overSel = 1 - overSel; A.tele(); }
     const go = stateT > 70 && startPressed();
     clearEdges(); eat(['space', 'enter', 'j', 'k']);
-    if (go) { resetGame(); if (!scene) { state = 'play'; stateT = 0; } }
+    if (go && opts && overSel === 0) { M.muffle(false); continueRun(); logEv('retry'); }
+    else if (go) { if (state === 'over' && !endlessMode) clearCheckpoint(); resetGame(); if (!scene) { state = 'play'; stateT = 0; } }
     stepParts();
     return;
   }
@@ -6868,11 +6911,9 @@ function update() {
   }
 
   if (!(witchT > 0) || classTime % 3 === 0) stepShots();
-  stepPickups(); stepParts(); stepProps(); stepLoot(); stepWreck(); stepRaid(); stepAbsurd();
+  stepPickups(); stepParts(); stepProps(); stepLoot(); stepWreck(); stepRaid(); stepAbsurd(); stepWarm(); stepLowHP();
   // a level up never stops a fight: the tree waits until nobody is left standing, then opens
   calmT = enemies.some(e => !e.dead && !e.crowd && !e.leaving) ? 0 : calmT + 1;
-  if (autoTree && pendingPicks > 0 && SET.tree !== 'manual' && calmT > 24 && state === 'play' && !scene
-      && ['idle', 'walk', 'run'].includes(player.st) && !player.carry && !player.dead) { autoTree = false; openTree(); }
   if (treeReq) { treeReq = false; if (state === 'play' && progression()) openTree(); }
   if (state === 'loot') return;
   stepWorldEvent();
@@ -6883,7 +6924,7 @@ function update() {
   const cap = bossRound(round) ? 2 : 3;                // never more than three at once: room to see what each one does
   const alive = enemies.reduce((n, e) => n + (e.dead || e.crowd || e.leaving ? 0 : 1), 0);   // bodies lie around; crowds are passing through
   // a level up waiting: once the room is empty, the next lot holds back so the tree can open in the quiet
-  const hold = autoTree && pendingPicks > 0 && SET.tree !== 'manual' && progression() && calmT < 240;
+  const hold = false;                                  // (the web never forces itself open, so nothing waits for it)
   if (spawnQ.length) {
     if (hold && !alive) spawnDelay = Math.max(spawnDelay, 20);
     else if (--spawnDelay <= 0 && alive < cap) { spawnEnemy(spawnQ.shift()); spawnDelay = 66; }
@@ -6904,7 +6945,7 @@ function update() {
     ring(p.x, p.y, '#8bc34a', 6, 60); flashScreen = 8; A.rank();
   }
   if (player.hp <= 0 && state === 'play') {
-    state = 'over'; stateT = 0; shake = 11; A.ko();
+    state = 'over'; stateT = 0; shake = 11; A.ko(); overSel = 0;
     slowMo = 0; focus = null; M.muffle(true); saveBest();
   }
 }
@@ -7161,7 +7202,7 @@ function titleTap(x, y) {
 
 /* ---------- settings and controls screens (from the title or the pause menu) ---------- */
 let menu = null;
-const SET_ITEMS = ['MUSIC', 'SOUND FX', 'BLOOD', 'SCREEN SHAKE', 'FLASHES', 'DIFFICULTY', 'STORY SCENES', 'ENEMY CARDS', 'SKILL TREE', 'PAD POSITION', 'PAD SIZE', 'FULLSCREEN', 'CONTROLS', 'BACK'];
+const SET_ITEMS = ['MUSIC', 'SOUND FX', 'BLOOD', 'SCREEN SHAKE', 'FLASHES', 'DIFFICULTY', 'STORY SCENES', 'ENEMY CARDS', 'VIBRATION', 'PAD POSITION', 'PAD SIZE', 'FULLSCREEN', 'CONTROLS', 'BACK'];
 function openMenu(kind, from) { menu = { kind, from, sel: 0 }; A.tele(); ['space', 'enter', 'j', 'k', 'l'].forEach(k => { buf[k] = 0; }); }
 function closeMenu() { if (menu && menu.kind === 'controls' && menu.back) { menu = menu.back; return; } menu = null; saveSet(); A.tele(); }
 function setAdjust(it, d) {
@@ -7171,7 +7212,7 @@ function setAdjust(it, d) {
   else if (it === 'SCREEN SHAKE') SET.shake = !SET.shake;
   else if (it === 'FLASHES') SET.flash = !SET.flash;
   else if (it === 'ENEMY CARDS') SET.cards = SET.cards === false;
-  else if (it === 'SKILL TREE') SET.tree = SET.tree === 'manual' ? 'calm' : 'manual';
+  else if (it === 'VIBRATION') { SET.haptic = SET.haptic === false; if (SET.haptic) haptic(40); }
   else if (it === 'STORY SCENES') SET.story = SET.story === false;
   else if (it === 'PAD POSITION') { const o = ['float', 'mid', 'low'], i = Math.max(0, o.indexOf(SET.padPos || 'float')); SET.padPos = o[(i + (d < 0 ? 2 : 1)) % 3]; fit(); }
   else if (it === 'PAD SIZE') { const o = ['s', 'm', 'l'], i = o.indexOf(SET.padSize || 'm'); SET.padSize = o[(i + (d < 0 ? 2 : 1)) % 3]; fit(); }
@@ -7234,7 +7275,7 @@ function drawMenu() {
     else if (it === 'SCREEN SHAKE') val = on(SET.shake);
     else if (it === 'FLASHES') val = SET.flash ? 'FULL' : 'REDUCED';
     else if (it === 'ENEMY CARDS') val = on(SET.cards !== false);
-    else if (it === 'SKILL TREE') val = SET.tree === 'manual' ? 'WHEN I ASK' : 'WHEN CLEAR';
+    else if (it === 'VIBRATION') val = SET.haptic === false ? 'OFF' : 'ON';
     else if (it === 'STORY SCENES') val = on(SET.story !== false);
     else if (it === 'PAD POSITION') val = SET.padPos === 'low' ? 'LOW' : SET.padPos === 'mid' ? 'MIDDLE' : 'FLOATING';
     else if (it === 'PAD SIZE') val = { s: 'SMALL', m: 'MEDIUM', l: 'LARGE' }[SET.padSize || 'm'];
@@ -7245,7 +7286,7 @@ function drawMenu() {
   });
   ctx.textAlign = 'center'; ctx.font = '7px monospace'; ctx.fillStyle = '#6b6388';
   const it = SET_ITEMS[menu.sel];
-  ctx.fillText(it === 'DIFFICULTY' ? DIFF().note : it === 'FLASHES' ? 'tones down the white flashes on big hits' : it === 'STORY SCENES' ? 'off: no cut-scenes, straight to the fighting' : it === 'PAD POSITION' ? 'floating: touch anywhere on a side and the stick appears there' : it === 'PAD SIZE' ? 'phone: how big the stick and buttons are' : it === 'SKILL TREE' ? 'after a level up: open the tree once the room is clear, or only when you ask' : isTouch() ? 'tap a row - left half lowers, right half raises' :
+  ctx.fillText(it === 'DIFFICULTY' ? DIFF().note : it === 'FLASHES' ? 'tones down the white flashes on big hits' : it === 'STORY SCENES' ? 'off: no cut-scenes, straight to the fighting' : it === 'PAD POSITION' ? 'floating: touch anywhere on a side and the stick appears there' : it === 'PAD SIZE' ? 'phone: how big the stick and buttons are' : it === 'VIBRATION' ? 'phone buzz / controller rumble on hits, parries and finishers' : isTouch() ? 'tap a row - left half lowers, right half raises' :
                GP.active ? 'up/down choose   left/right change   A select   B back' : 'arrows choose   left/right change   enter select   esc back', LW / 2, LH - 7);
   ctx.textAlign = 'left';
 }
@@ -7271,6 +7312,13 @@ function drawControls() {
   ctx.font = '7px monospace'; ctx.fillStyle = '#6b6388'; ctx.fillText('any button to go back', LW / 2, 236);
 }
 let tapGo = false;                                      // a tap on the screen, for "tap to go on" moments
+/* game over: try the round again from its start (with what you had then), or start the class over */
+let overSel = 0;
+const canRetry = () => !endlessMode && !tutorial && !!checkpoint();
+const OVER_BTN = i => ({ x: LW / 2 - 70, y: 186 + i * 18, w: 140, h: 15 });
+function overTap(x, y) {
+  for (let i = 0; i < 2; i++) { const r = OVER_BTN(i); if (x >= r.x && x <= r.x + r.w && y >= r.y - 2 && y <= r.y + r.h + 2) { overSel = i; tapGo = true; return; } }
+}
 function startPressed() {
   const t = tapGo; tapGo = false;
   return t || tapped('space') || tapped('enter') || tapped('j') || tapped('k') || T.lightEdge || T.light;
@@ -7298,6 +7346,18 @@ function stepShots() {
 function stepPickups() {
   pickups.forEach(k => {
     k.t++;
+    if (k.orb) {
+      if (k.t < 22) { k.x += k.vx; k.z = Math.max(0, k.z + k.vz); k.vz -= 0.28; k.vx *= 0.94; return; }
+      const tx = player.x, ty = player.y, tz = 30 + (player.baseZ || 0) + player.airY, sp = Math.min(0.35, 0.08 + (k.t - 22) * 0.012);
+      k.x += (tx - k.x) * sp; k.y += (ty - k.y) * sp; k.z += (tz - k.z) * sp;
+      if (Math.abs(k.x - tx) < 6 && Math.abs(k.y - ty) < 6) {
+        const heal = Math.round(4 * (1 + perk('snack')));
+        player.hp = Math.min(player.maxhp, player.hp + heal); k.gone = true;
+        burst(player.x, player.y - 30, 3, '#76ff03'); A.tone(880 + rnd(0, 200), 1320, 0.05, 'sine', 0.04);
+        if (!(stepPickups.sayT > 0)) { say(player.x, player.y - 76, '+HEALTH', '#76ff03'); stepPickups.sayT = 30; }
+      }
+      return;
+    }
     if (Math.abs(k.x - player.x) < 22 && Math.abs(k.y - player.y) < 15) {
       const heal = (k.burger ? 12 : 18) * (1 + perk('snack'));
       player.hp = Math.min(player.maxhp, player.hp + heal);
@@ -7309,6 +7369,7 @@ function stepPickups() {
     if (k.t > 620) k.gone = true;
   });
   pickups = pickups.filter(k => !k.gone);
+  if (stepPickups.sayT > 0) stepPickups.sayT--;
 }
 
 function stepParts() {
@@ -8022,7 +8083,7 @@ const syn = name => SYNERGIES.some(s => s[2] === name && learned.has(s[0]) && le
 const xpNeed = L => 60 + (L - 1) * 65;
 function skillFx(key) {
   let v = 0;
-  if (!ngPlus) for (const id of webSet) { const n = WEBI[id]; if (n && n.t !== 'n' && n.fx && n.fx[key]) v += n.fx[key]; }
+  for (const id of webSet) { const n = WEBI[id]; if (n && n.t !== 'n' && n.fx && n.fx[key]) v += n.fx[key]; }
   for (const id in passives) if (PASSIVES[id].fx[key]) v += PASSIVES[id].fx[key] * passives[id];
   for (const id in ABSURD) if (ABSURD[id].fx && ABSURD[id].fx[key] && learned.has(id)) v += ABSURD[id].fx[key];
   return v;
@@ -8031,7 +8092,7 @@ const BASE_SKILLS = ['grab', 'parry', 'finisher', 'heavy', 'air'];      // every
 function initSkills() {
   learned = new Set(BASE_SKILLS); passives = {}; level = 1; xp = 0; pendingPicks = 0; lvlCard = null;
   webSet = new Set([webStart()]); webLearn.said = 0;
-  if (ngPlus) TREE.forEach(n => { if (STYLE_OF[n[0]] && STYLE_OF[n[0]] !== leanStyle()) return; if (PASSIVES[n[0]]) passives[n[0]] = 1; else learned.add(n[0]); });
+  if (ngPlus) ngWebBase();
 }
 function lockedHint(what) {
   if (lockT > 0 || !progression()) return;
@@ -8066,8 +8127,8 @@ const TREE = [
   ['dash', 3, 2, 1, ['dodge']], ['heart', 3, 0, 2, ['weapons']], ['whistle', 3, 1, 2, ['skin']], ['sprint', 3, 2, 2, ['dash']], ['cardio', 3, 2, 3, ['sprint']]
 ];
 /*WEB_DATA*/
-const WEB = [{"id":"h0","x":0.0,"y":-78.0,"t":"s","fx":{"hp":5}},{"id":"h1","x":67.5,"y":-39.0,"t":"s","fx":{"tough":0.02}},{"id":"h2","x":67.5,"y":39.0,"t":"s","fx":{"hp":5}},{"id":"h3","x":0.0,"y":78.0,"t":"s","fx":{"tough":0.02}},{"id":"h4","x":-67.5,"y":39.0,"t":"s","fx":{"hp":5}},{"id":"h5","x":-67.5,"y":-39.0,"t":"s","fx":{"tough":0.02}},{"id":"heart_n","x":0,"y":0,"t":"n","skill":"heart"},{"id":"start_yoga","x":0.0,"y":-150.0,"t":"c","cls":"yoga"},{"id":"start_bb","x":-129.9,"y":75.0,"t":"c","cls":"bb"},{"id":"start_cyc","x":129.9,"y":75.0,"t":"c","cls":"cyc"},{"id":"box_s0","x":-193.0,"y":34.0,"t":"s","fx":{"jab":0.05}},{"id":"box1_n","x":-197.5,"y":8.4,"t":"n","skill":"box1","req":null},{"id":"box_s1","x":-234.4,"y":41.3,"t":"s","fx":{"jab":0.05}},{"id":"box2_n","x":-229.9,"y":66.9,"t":"n","skill":"box2","req":"box1"},{"id":"box_s2","x":-275.7,"y":48.6,"t":"s","fx":{"stam":0.1}},{"id":"handspd_n","x":-280.2,"y":23.0,"t":"n","skill":"handspd","req":"box2"},{"id":"box_s3","x":-317.1,"y":55.9,"t":"s","fx":{"jab":0.05}},{"id":"box3_n","x":-312.6,"y":81.5,"t":"n","skill":"box3","req":"handspd"},{"id":"box_s4","x":-358.5,"y":63.2,"t":"s","fx":{"jab":0.05}},{"id":"k_glass","x":-405.7,"y":71.5,"t":"k","name":"GLASS JAW","desc":"+40% damage. you take 25% more.","fx":{"dmg":0.4,"tough":-0.25}},{"id":"kick_s0","x":-60.6,"y":-186.4,"t":"s","fx":{"kick":0.05}},{"id":"kick1_n","x":-35.9,"y":-194.4,"t":"n","skill":"kick1","req":null},{"id":"kick_s1","x":-73.5,"y":-226.4,"t":"s","fx":{"kick":0.05}},{"id":"kick2_n","x":-98.2,"y":-218.4,"t":"n","skill":"kick2","req":"kick1"},{"id":"kick_s2","x":-86.5,"y":-266.3,"t":"s","fx":{"reach":3}},{"id":"legs_n","x":-61.8,"y":-274.3,"t":"n","skill":"legs","req":"kick2"},{"id":"kick_s3","x":-99.5,"y":-306.2,"t":"s","fx":{"kick":0.05}},{"id":"kick3_n","x":-124.2,"y":-298.2,"t":"n","skill":"kick3","req":"legs"},{"id":"kick_s4","x":-112.5,"y":-346.2,"t":"s","fx":{"kick":0.05}},{"id":"k_wind","x":-127.3,"y":-391.8,"t":"k","name":"SECOND WIND","desc":"once per area, dropping under 30% health heals 30 and refills stamina. -15 max health.","fx":{"hp":-15}},{"id":"mix_s0","x":193.0,"y":34.0,"t":"s","fx":{"dmg":0.03}},{"id":"mix1_n","x":188.5,"y":59.6,"t":"n","skill":"mix1","req":null},{"id":"mix_s1","x":234.4,"y":41.3,"t":"s","fx":{"dmg":0.03}},{"id":"mix2_n","x":238.9,"y":15.7,"t":"n","skill":"mix2","req":"mix1"},{"id":"mix_s2","x":275.7,"y":48.6,"t":"s","fx":{"clinch":0.1}},{"id":"flow_n","x":271.2,"y":74.2,"t":"n","skill":"flow","req":"mix2"},{"id":"mix_s3","x":317.1,"y":55.9,"t":"s","fx":{"dmg":0.03}},{"id":"mix3_n","x":321.6,"y":30.3,"t":"n","skill":"mix3","req":"flow"},{"id":"mix_s4","x":358.5,"y":63.2,"t":"s","fx":{"dmg":0.03}},{"id":"k_brawl","x":405.7,"y":71.5,"t":"k","name":"BRAWLER'S INSTINCT","desc":"every third hit of a combo staggers them. combos cost 30% more stamina.","fx":{}},{"id":"hvy_s0","x":0.0,"y":150.0,"t":"s","fx":{"heavyK":0.06}},{"id":"protein_n","x":-26.0,"y":150.0,"t":"n","skill":"protein","req":null},{"id":"hvy_s1","x":0.0,"y":192.0,"t":"s","fx":{"heavyK":0.06}},{"id":"charge_n","x":26.0,"y":192.0,"t":"n","skill":"charge","req":null},{"id":"hvy_s2","x":0.0,"y":234.0,"t":"s","fx":{"furyK":0.1}},{"id":"launch_n","x":-26.0,"y":234.0,"t":"n","skill":"launch","req":null},{"id":"hvy_s3","x":0.0,"y":276.0,"t":"s","fx":{"heavyK":0.06}},{"id":"quake_n","x":26.0,"y":276.0,"t":"n","skill":"quake","req":"charge"},{"id":"hvy_s4","x":0.0,"y":318.0,"t":"s","fx":{"heavyK":0.06}},{"id":"k_iron","x":0.0,"y":366.0,"t":"k","name":"IRON WILL","desc":"nothing knocks you down. you can not dodge.","fx":{"tough":0.05}},{"id":"temper_n","x":30.0,"y":234.0,"t":"n","skill":"temper","req":null},{"id":"air_s0","x":70.4,"y":-132.4,"t":"s","fx":{"airK":0.06}},{"id":"hang_n","x":93.4,"y":-120.2,"t":"n","skill":"hang","req":null},{"id":"air_s1","x":90.1,"y":-169.5,"t":"s","fx":{"airK":0.06}},{"id":"parkour_n","x":67.1,"y":-181.7,"t":"n","skill":"parkour","req":null},{"id":"air_s2","x":109.9,"y":-206.6,"t":"s","fx":{"speed":0.04}},{"id":"wallkick_n","x":132.9,"y":-194.4,"t":"n","skill":"wallkick","req":"parkour"},{"id":"air_s3","x":129.6,"y":-243.7,"t":"s","fx":{"airK":0.06}},{"id":"dfa_n","x":106.6,"y":-255.9,"t":"n","skill":"dfa","req":null},{"id":"air_s4","x":149.3,"y":-280.8,"t":"s","fx":{"airK":0.06}},{"id":"k_berserk","x":171.8,"y":-323.2,"t":"k","name":"BERSERKER","desc":"fury fills twice as fast and hits 25% harder. blocking costs double stamina.","fx":{"furyK":1,"blockCost":1}},{"id":"cutter_n","x":83.4,"y":-220.7,"t":"n","skill":"cutter","req":null},{"id":"def_s0","x":-129.9,"y":-75.0,"t":"s","fx":{"tough":0.03}},{"id":"skin_n","x":-116.9,"y":-97.5,"t":"n","skill":"skin","req":null},{"id":"def_s1","x":-166.3,"y":-96.0,"t":"s","fx":{"parry":2}},{"id":"dodge_n","x":-179.3,"y":-73.5,"t":"n","skill":"dodge","req":null},{"id":"def_s2","x":-202.6,"y":-117.0,"t":"s","fx":{"witchK":0.2}},{"id":"dash_n","x":-189.6,"y":-139.5,"t":"n","skill":"dash","req":"dodge"},{"id":"def_s3","x":-239.0,"y":-138.0,"t":"s","fx":{"tough":0.03}},{"id":"whistle_n","x":-252.0,"y":-115.5,"t":"n","skill":"whistle","req":null},{"id":"def_s4","x":-275.4,"y":-159.0,"t":"s","fx":{"stam":0.1}},{"id":"k_second","x":-317.0,"y":-183.0,"t":"k","name":"UNTOUCHABLE","desc":"a much wider parry window, and perfect parries and dodges heal 8. normal blocks let 30% through.","fx":{"parry":4}},{"id":"weapons_n","x":-151.3,"y":-122.0,"t":"n","skill":"weapons","req":null},{"id":"sprint_n","x":-224.0,"y":-164.0,"t":"n","skill":"sprint","req":"dash"},{"id":"cardio_n","x":-288.4,"y":-136.5,"t":"n","skill":"cardio","req":null}];
-const WEB_LINKS = [["air_s0","air_s1"],["air_s0","h1"],["air_s0","hang_n"],["air_s0","start_cyc"],["air_s0","start_yoga"],["air_s1","air_s2"],["air_s1","parkour_n"],["air_s2","air_s3"],["air_s2","cutter_n"],["air_s2","wallkick_n"],["air_s3","air_s4"],["air_s3","dfa_n"],["air_s4","k_berserk"],["box1_n","box_s0"],["box2_n","box_s1"],["box3_n","box_s3"],["box_s0","box_s1"],["box_s0","start_bb"],["box_s1","box_s2"],["box_s2","box_s3"],["box_s2","handspd_n"],["box_s3","box_s4"],["box_s4","k_glass"],["cardio_n","def_s4"],["charge_n","hvy_s1"],["dash_n","def_s2"],["def_s0","def_s1"],["def_s0","h5"],["def_s0","skin_n"],["def_s0","start_bb"],["def_s0","start_yoga"],["def_s1","def_s2"],["def_s1","dodge_n"],["def_s1","weapons_n"],["def_s2","def_s3"],["def_s3","def_s4"],["def_s3","sprint_n"],["def_s3","whistle_n"],["def_s4","k_second"],["flow_n","mix_s2"],["h0","h1"],["h0","h5"],["h0","start_yoga"],["h1","h2"],["h1","heart_n"],["h2","h3"],["h2","start_cyc"],["h3","h4"],["h3","heart_n"],["h3","hvy_s0"],["h4","h5"],["h4","start_bb"],["h5","heart_n"],["hvy_s0","hvy_s1"],["hvy_s0","protein_n"],["hvy_s0","start_bb"],["hvy_s0","start_cyc"],["hvy_s1","hvy_s2"],["hvy_s2","hvy_s3"],["hvy_s2","launch_n"],["hvy_s2","temper_n"],["hvy_s3","hvy_s4"],["hvy_s3","quake_n"],["hvy_s4","k_iron"],["k_brawl","mix_s4"],["k_wind","kick_s4"],["kick1_n","kick_s0"],["kick2_n","kick_s1"],["kick3_n","kick_s3"],["kick_s0","kick_s1"],["kick_s0","start_yoga"],["kick_s1","kick_s2"],["kick_s2","kick_s3"],["kick_s2","legs_n"],["kick_s3","kick_s4"],["mix1_n","mix_s0"],["mix2_n","mix_s1"],["mix3_n","mix_s3"],["mix_s0","mix_s1"],["mix_s0","start_cyc"],["mix_s1","mix_s2"],["mix_s2","mix_s3"],["mix_s3","mix_s4"]];
+const WEB = [{"id":"h0","x":0.0,"y":-78.0,"t":"s","fx":{"hp":5}},{"id":"h1","x":67.5,"y":-39.0,"t":"s","fx":{"tough":0.02}},{"id":"h2","x":67.5,"y":39.0,"t":"s","fx":{"hp":5}},{"id":"h3","x":0.0,"y":78.0,"t":"s","fx":{"tough":0.02}},{"id":"h4","x":-67.5,"y":39.0,"t":"s","fx":{"hp":5}},{"id":"h5","x":-67.5,"y":-39.0,"t":"s","fx":{"tough":0.02}},{"id":"heart_n","x":0,"y":0,"t":"n","skill":"heart"},{"id":"start_yoga","x":0.0,"y":-150.0,"t":"c","cls":"yoga"},{"id":"start_bb","x":-129.9,"y":75.0,"t":"c","cls":"bb"},{"id":"start_cyc","x":129.9,"y":75.0,"t":"c","cls":"cyc"},{"id":"box_s0","x":-193.0,"y":34.0,"t":"s","fx":{"jab":0.05}},{"id":"box1_n","x":-197.5,"y":8.4,"t":"n","skill":"box1","req":null},{"id":"box_s1","x":-234.4,"y":41.3,"t":"s","fx":{"jab":0.05}},{"id":"box2_n","x":-229.9,"y":66.9,"t":"n","skill":"box2","req":"box1"},{"id":"box_s2","x":-275.7,"y":48.6,"t":"s","fx":{"stam":0.1}},{"id":"handspd_n","x":-280.2,"y":23.0,"t":"n","skill":"handspd","req":"box2"},{"id":"box_s3","x":-317.1,"y":55.9,"t":"s","fx":{"jab":0.05}},{"id":"box3_n","x":-312.6,"y":81.5,"t":"n","skill":"box3","req":"handspd"},{"id":"box_s4","x":-358.5,"y":63.2,"t":"s","fx":{"jab":0.05}},{"id":"k_glass","x":-405.7,"y":71.5,"t":"k","name":"GLASS JAW","desc":"+40% damage. you take 25% more.","fx":{"dmg":0.4,"tough":-0.25}},{"id":"kick_s0","x":-60.6,"y":-186.4,"t":"s","fx":{"kick":0.05}},{"id":"kick1_n","x":-35.9,"y":-194.4,"t":"n","skill":"kick1","req":null},{"id":"kick_s1","x":-73.5,"y":-226.4,"t":"s","fx":{"kick":0.05}},{"id":"kick2_n","x":-98.2,"y":-218.4,"t":"n","skill":"kick2","req":"kick1"},{"id":"kick_s2","x":-86.5,"y":-266.3,"t":"s","fx":{"reach":3}},{"id":"legs_n","x":-61.8,"y":-274.3,"t":"n","skill":"legs","req":"kick2"},{"id":"kick_s3","x":-99.5,"y":-306.2,"t":"s","fx":{"kick":0.05}},{"id":"kick3_n","x":-124.2,"y":-298.2,"t":"n","skill":"kick3","req":"legs"},{"id":"kick_s4","x":-112.5,"y":-346.2,"t":"s","fx":{"kick":0.05}},{"id":"k_wind","x":-127.3,"y":-391.8,"t":"k","name":"SECOND WIND","desc":"once per area, dropping under 30% health heals 30 and refills stamina. -15 max health.","fx":{"hp":-15}},{"id":"mix_s0","x":193.0,"y":34.0,"t":"s","fx":{"dmg":0.03}},{"id":"mix1_n","x":188.5,"y":59.6,"t":"n","skill":"mix1","req":null},{"id":"mix_s1","x":234.4,"y":41.3,"t":"s","fx":{"dmg":0.03}},{"id":"mix2_n","x":238.9,"y":15.7,"t":"n","skill":"mix2","req":"mix1"},{"id":"mix_s2","x":275.7,"y":48.6,"t":"s","fx":{"clinch":0.1}},{"id":"flow_n","x":271.2,"y":74.2,"t":"n","skill":"flow","req":"mix2"},{"id":"mix_s3","x":317.1,"y":55.9,"t":"s","fx":{"dmg":0.03}},{"id":"mix3_n","x":321.6,"y":30.3,"t":"n","skill":"mix3","req":"flow"},{"id":"mix_s4","x":358.5,"y":63.2,"t":"s","fx":{"dmg":0.03}},{"id":"k_brawl","x":405.7,"y":71.5,"t":"k","name":"BRAWLER'S INSTINCT","desc":"every third hit of a combo staggers them. combos cost 30% more stamina.","fx":{}},{"id":"hvy_s0","x":0.0,"y":150.0,"t":"s","fx":{"heavyK":0.06}},{"id":"protein_n","x":-26.0,"y":150.0,"t":"n","skill":"protein","req":null},{"id":"hvy_s1","x":0.0,"y":192.0,"t":"s","fx":{"heavyK":0.06}},{"id":"charge_n","x":26.0,"y":192.0,"t":"n","skill":"charge","req":null},{"id":"hvy_s2","x":0.0,"y":234.0,"t":"s","fx":{"furyK":0.1}},{"id":"launch_n","x":-26.0,"y":234.0,"t":"n","skill":"launch","req":null},{"id":"hvy_s3","x":0.0,"y":276.0,"t":"s","fx":{"heavyK":0.06}},{"id":"quake_n","x":26.0,"y":276.0,"t":"n","skill":"quake","req":"charge"},{"id":"hvy_s4","x":0.0,"y":318.0,"t":"s","fx":{"heavyK":0.06}},{"id":"k_iron","x":0.0,"y":366.0,"t":"k","name":"IRON WILL","desc":"nothing knocks you down. you can not dodge.","fx":{"tough":0.05}},{"id":"temper_n","x":30.0,"y":234.0,"t":"n","skill":"temper","req":null},{"id":"air_s0","x":70.4,"y":-132.4,"t":"s","fx":{"airK":0.06}},{"id":"hang_n","x":93.4,"y":-120.2,"t":"n","skill":"hang","req":null},{"id":"air_s1","x":90.1,"y":-169.5,"t":"s","fx":{"airK":0.06}},{"id":"parkour_n","x":67.1,"y":-181.7,"t":"n","skill":"parkour","req":null},{"id":"air_s2","x":109.9,"y":-206.6,"t":"s","fx":{"speed":0.04}},{"id":"wallkick_n","x":132.9,"y":-194.4,"t":"n","skill":"wallkick","req":"parkour"},{"id":"air_s3","x":129.6,"y":-243.7,"t":"s","fx":{"airK":0.06}},{"id":"dfa_n","x":106.6,"y":-255.9,"t":"n","skill":"dfa","req":null},{"id":"air_s4","x":149.3,"y":-280.8,"t":"s","fx":{"airK":0.06}},{"id":"k_berserk","x":171.8,"y":-323.2,"t":"k","name":"BERSERKER","desc":"fury fills twice as fast and hits 25% harder. blocking costs double stamina.","fx":{"furyK":1,"blockCost":1}},{"id":"cutter_n","x":83.4,"y":-220.7,"t":"n","skill":"cutter","req":null},{"id":"def_s0","x":-129.9,"y":-75.0,"t":"s","fx":{"tough":0.03}},{"id":"skin_n","x":-116.9,"y":-97.5,"t":"n","skill":"skin","req":null},{"id":"def_s1","x":-166.3,"y":-96.0,"t":"s","fx":{"parry":2}},{"id":"dodge_n","x":-179.3,"y":-73.5,"t":"n","skill":"dodge","req":null},{"id":"def_s2","x":-202.6,"y":-117.0,"t":"s","fx":{"witchK":0.2}},{"id":"dash_n","x":-189.6,"y":-139.5,"t":"n","skill":"dash","req":"dodge"},{"id":"def_s3","x":-239.0,"y":-138.0,"t":"s","fx":{"tough":0.03}},{"id":"whistle_n","x":-252.0,"y":-115.5,"t":"n","skill":"whistle","req":null},{"id":"def_s4","x":-275.4,"y":-159.0,"t":"s","fx":{"stam":0.1}},{"id":"k_second","x":-317.0,"y":-183.0,"t":"k","name":"UNTOUCHABLE","desc":"a much wider parry window, and perfect parries and dodges heal 8. normal blocks let 30% through.","fx":{"parry":4}},{"id":"weapons_n","x":-151.3,"y":-122.0,"t":"n","skill":"weapons","req":null},{"id":"sprint_n","x":-224.0,"y":-164.0,"t":"n","skill":"sprint","req":"dash"},{"id":"cardio_n","x":-288.4,"y":-136.5,"t":"n","skill":"cardio","req":null},{"id":"ab_gigafist","x":105.9,"y":135.5,"t":"a","skill":"gigafist"},{"id":"ab_stylengine","x":133.0,"y":170.2,"t":"a","skill":"stylengine"},{"id":"ab_tornado","x":160.1,"y":204.9,"t":"a","skill":"tornado"},{"id":"ab_vampire","x":187.2,"y":239.6,"t":"a","skill":"vampire"},{"id":"ab_magnet","x":-96.2,"y":142.6,"t":"a","skill":"magnet"},{"id":"ab_explode","x":-120.8,"y":179.1,"t":"a","skill":"explode"},{"id":"ab_wmaster","x":-145.4,"y":215.5,"t":"a","skill":"wmaster"},{"id":"ab_ironskin","x":-170.0,"y":252.0,"t":"a","skill":"ironskin"},{"id":"ab_djump","x":193.7,"y":-86.2,"t":"a","skill":"djump"},{"id":"ab_bullet","x":233.9,"y":-104.1,"t":"a","skill":"bullet"},{"id":"ab_meteor","x":274.1,"y":-122.0,"t":"a","skill":"meteor"},{"id":"ab_fengine","x":314.3,"y":-139.9,"t":"a","skill":"fengine"}];
+const WEB_LINKS = [["ab_bullet","ab_djump"],["ab_bullet","ab_meteor"],["ab_djump","mix_s0"],["ab_explode","ab_magnet"],["ab_explode","ab_wmaster"],["ab_fengine","ab_meteor"],["ab_gigafist","ab_stylengine"],["ab_gigafist","start_cyc"],["ab_ironskin","ab_wmaster"],["ab_magnet","start_bb"],["ab_stylengine","ab_tornado"],["ab_tornado","ab_vampire"],["air_s0","air_s1"],["air_s0","h1"],["air_s0","hang_n"],["air_s0","start_cyc"],["air_s0","start_yoga"],["air_s1","air_s2"],["air_s1","parkour_n"],["air_s2","air_s3"],["air_s2","cutter_n"],["air_s2","wallkick_n"],["air_s3","air_s4"],["air_s3","dfa_n"],["air_s4","k_berserk"],["box1_n","box_s0"],["box2_n","box_s1"],["box3_n","box_s3"],["box_s0","box_s1"],["box_s0","start_bb"],["box_s1","box_s2"],["box_s2","box_s3"],["box_s2","handspd_n"],["box_s3","box_s4"],["box_s4","k_glass"],["cardio_n","def_s4"],["charge_n","hvy_s1"],["dash_n","def_s2"],["def_s0","def_s1"],["def_s0","h5"],["def_s0","skin_n"],["def_s0","start_bb"],["def_s0","start_yoga"],["def_s1","def_s2"],["def_s1","dodge_n"],["def_s1","weapons_n"],["def_s2","def_s3"],["def_s3","def_s4"],["def_s3","sprint_n"],["def_s3","whistle_n"],["def_s4","k_second"],["flow_n","mix_s2"],["h0","h1"],["h0","h5"],["h0","start_yoga"],["h1","h2"],["h1","heart_n"],["h2","h3"],["h2","start_cyc"],["h3","h4"],["h3","heart_n"],["h3","hvy_s0"],["h4","h5"],["h4","start_bb"],["h5","heart_n"],["hvy_s0","hvy_s1"],["hvy_s0","protein_n"],["hvy_s0","start_bb"],["hvy_s0","start_cyc"],["hvy_s1","hvy_s2"],["hvy_s2","hvy_s3"],["hvy_s2","launch_n"],["hvy_s2","temper_n"],["hvy_s3","hvy_s4"],["hvy_s3","quake_n"],["hvy_s4","k_iron"],["k_brawl","mix_s4"],["k_wind","kick_s4"],["kick1_n","kick_s0"],["kick2_n","kick_s1"],["kick3_n","kick_s3"],["kick_s0","kick_s1"],["kick_s0","start_yoga"],["kick_s1","kick_s2"],["kick_s2","kick_s3"],["kick_s2","legs_n"],["kick_s3","kick_s4"],["mix1_n","mix_s0"],["mix2_n","mix_s1"],["mix3_n","mix_s3"],["mix_s0","mix_s1"],["mix_s0","start_cyc"],["mix_s1","mix_s2"],["mix_s2","mix_s3"],["mix_s3","mix_s4"]];
 /*END_WEB_DATA*/
 /* ======================= THE SKILL WEB =======================
    One constellation for everyone, each class starting on its own side of it (yoga by KICKS,
@@ -8077,18 +8138,29 @@ const WEB_LINKS = [["air_s0","air_s1"],["air_s0","h1"],["air_s0","hang_n"],["air
 const WEBI = {}; WEB.forEach((n, i) => { n.i = i; WEBI[n.id] = n; });
 const WEB_ADJ = {}; WEB_LINKS.forEach(([a, b]) => { (WEB_ADJ[a] = WEB_ADJ[a] || []).push(b); (WEB_ADJ[b] = WEB_ADJ[b] || []).push(a); });
 let webSet = new Set();
+const webVis = n => n.t !== 'a' || ngPlus;                    // the ABSURD chains only exist in NEW GAME+
+function ngWebBase() {                                        // NEW GAME+: the whole web is yours, bar the keystones, the ABSURD chains and the other styles
+  webSet = new Set();
+  WEB.forEach(n => {
+    if (n.t === 'k' || n.t === 'a') return;
+    if (n.t === 'n' && STYLE_OF[n.skill] && STYLE_OF[n.skill] !== leanStyle()) return;
+    webSet.add(n.id);
+    if (n.t === 'n') { if (PASSIVES[n.skill]) passives[n.skill] = 1; else learned.add(n.skill); }
+  });
+}
 const webStart = () => 'start_' + CLS;
 const keystone = id => progression() && webSet.has(id);
 const webHasSkill = sk => learned.has(sk) || !!passives[sk];
 function webLocked(n) { return n.t === 'n' && STYLE_OF[n.skill] && styleOf() && styleOf() !== STYLE_OF[n.skill]; }
 function webReady(n) {
-  if (webSet.has(n.id) || n.id === webStart()) return false;          // other classes' starts are just stepping stones
+  if (!webVis(n) || webSet.has(n.id) || n.id === webStart()) return false;   // other classes' starts are just stepping stones
   if (!(WEB_ADJ[n.id] || []).some(a => webSet.has(a))) return false;
   if (n.req && !webHasSkill(n.req)) return false;
   return !webLocked(n);
 }
 function webInfo(n) {                                     // name / kind / what it does / how
   if (n.t === 'k') return { name: n.name, kind: 'KEYSTONE', desc: n.desc };
+  if (n.t === 'a') { const d = ABSURD[n.skill], sy = SYNERGIES.filter(q => q[0] === n.skill || q[1] === n.skill).map(q => q[2]); return { name: d.n, kind: 'ABSURD', desc: d.desc + (sy.length ? ' combos: ' + sy.join(', ').toLowerCase() + '.' : '') }; }
   if (n.t === 'c') return { name: CLASSES[n.cls].name, kind: 'CLASS START', desc: 'where the ' + CLASSES[n.cls].name.toLowerCase() + ' starts.' };
   if (n.t === 'n') { const d = nodeDef(n.skill); return { name: d.n, kind: SKILLS[n.skill] ? 'NEW MOVE' : 'NOTABLE', desc: d.desc, how: d.how }; }
   const LBL = { jab: ['PUNCHES', '%'], kick: ['KICKS', '%'], dmg: ['DAMAGE', '%'], hp: ['MAX HEALTH', ''], tough: ['DAMAGE TAKEN -', '%'], stam: ['STAMINA REGEN', '%'],
@@ -8101,7 +8173,8 @@ function webInfo(n) {                                     // name / kind / what 
 function webLearn(n) {
   if (!webReady(n) || pendingPicks <= 0) { A.tone(200, 150, 0.1, 'square', 0.08); return false; }
   pendingPicks--; webSet.add(n.id);
-  if (n.t === 'n') learnNode(n.skill);
+  if (n.t === 'n' || n.t === 'a') learnNode(n.skill);
+  if (n.t === 'a' && !(banner && banner.t > 0)) banner = { a: ABSURD[n.skill].n, b: ABSURD[n.skill].desc, t: 170 };
   if (n.t === 'k') { learned.add(n.id); banner = { a: n.name, b: n.desc, t: 200 }; logEv('keystone:' + n.id); }
   if (n.fx && n.fx.hp) { player.maxhp += n.fx.hp; player.hp = Math.max(1, Math.min(player.maxhp, player.hp + Math.max(0, n.fx.hp))); }
   if (n.t === 'n' && STYLE_OF[n.skill] && !webLearn.said) { webLearn.said = 1; banner = { a: 'YOU FIGHT ' + STYLES[STYLE_OF[n.skill]].n, b: 'for the rest of this run', t: 150 }; }
@@ -8111,7 +8184,7 @@ function webLearn(n) {
 }
 function webOpen() {
   const st = WEBI[webStart()] || WEB[0];
-  const ready = WEB.filter(webReady).sort((a, b) => Math.hypot(a.x - st.x, a.y - st.y) - Math.hypot(b.x - st.x, b.y - st.y));
+  const ready = WEB.filter(n => webReady(n) && (!ngPlus || n.t === 'a' || n.t === 'k')).sort((a, b) => Math.hypot(a.x - st.x, a.y - st.y) - Math.hypot(b.x - st.x, b.y - st.y));
   const sel = (ready[0] || st).i;
   lvlCard = { sel, t: 0, camX: WEB[sel].x, camY: WEB[sel].y, zoom: 0.8, ptrs: {}, drag: null };
   state = 'levelup'; stateT = 0; M.muffle(true); A.round();
@@ -8134,8 +8207,11 @@ const SKILL_GLYPH = { heart: 'heart', protein: 'bell', charge: 'bell', launch: '
                       hang: 'wing', parkour: 'wing', wallkick: 'wing', dfa: 'wing', cutter: 'wing',
                       skin: 'shield', dodge: 'arrow', dash: 'arrow', sprint: 'arrow', whistle: 'flame', weapons: 'sword', cardio: 'bolt' };
 const CLASS_GLYPH = { yoga: 'lotus', bb: 'barbell', cyc: 'wheel' };
+const ABS_GLYPH = { gigafist: 'fist', stylengine: 'star', tornado: 'wheel', vampire: 'heart', magnet: 'arrow', explode: 'flame',
+                    wmaster: 'sword', ironskin: 'shield', djump: 'wing', bullet: 'clock', meteor: 'bolt', fengine: 'flame' };
 function nodeGlyph(n) {
   if (n.t === 'k') return 'star';
+  if (n.t === 'a') return ABS_GLYPH[n.skill] || 'star';
   if (n.t === 'c') return CLASS_GLYPH[n.cls];
   if (n.t === 'n') return STYLE_OF[n.skill] ? { box: 'fist', kick: 'boot', mix: 'mix' }[STYLE_OF[n.skill]] : SKILL_GLYPH[n.skill] || 'star';
   return FX_GLYPH[Object.keys(n.fx || {})[0]] || null;
@@ -8147,22 +8223,25 @@ function drawGlyph(g, x, y, ps, col) {
   for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) if (G[r][c] === '#') ctx.fillRect(ox + c * ps, oy + r * ps, ps, ps);
 }
 const REGIONS = [['box_', 'BOXING', '#e53935', 'k_glass'], ['kick_', 'KICKS', '#ffd23f', 'k_wind'], ['mix_', 'MIX', '#4fc3f7', 'k_brawl'],
-                 ['hvy_', 'HEAVY', '#ff8a65', 'k_iron'], ['air_', 'AIR', '#80deea', 'k_berserk'], ['def_', 'DEFENCE', '#c5e1a5', 'k_second']]
-  .map(([p, name, col, key]) => { const ns = WEB.filter(n => n.id.startsWith(p)); const cx = ns.reduce((a, n) => a + n.x, 0) / ns.length, cy = ns.reduce((a, n) => a + n.y, 0) / ns.length;
+                 ['hvy_', 'HEAVY', '#ff8a65', 'k_iron'], ['air_', 'AIR', '#80deea', 'k_berserk'], ['def_', 'DEFENCE', '#c5e1a5', 'k_second'],
+                 ['ab_gigafist|ab_stylengine|ab_tornado|ab_vampire', 'POWER', '#ff4fa3', 'ab_vampire'], ['ab_magnet|ab_explode|ab_wmaster|ab_ironskin', 'CHAOS', '#ff4fa3', 'ab_ironskin'],
+                 ['ab_djump|ab_bullet|ab_meteor|ab_fengine', 'PHYSICS', '#ff4fa3', 'ab_fengine']]
+  .map(([p, name, col, key]) => { const ns = WEB.filter(n => p.includes('|') ? p.split('|').includes(n.id) : n.id.startsWith(p)); const cx = ns.reduce((a, n) => a + n.x, 0) / ns.length, cy = ns.reduce((a, n) => a + n.y, 0) / ns.length;
     const L = Math.hypot(cx, cy) || 1, side = Math.abs(cx) > Math.abs(cy);
     const tip = WEBI[key];                                                                         // just past the keystone at the tip, running outward
-    return side ? { name, col, x: tip.x, y: tip.y, dx: cx < 0 ? -1 : 1, dy: 0, align: cx < 0 ? 'right' : 'left' }
-                : { name, col, x: tip.x, y: tip.y, dx: 0, dy: cy < 0 ? -1 : 1, align: 'center' }; });
+    const ng = p.startsWith('ab_');
+    return side ? { ng, name, col, x: tip.x, y: tip.y, dx: cx < 0 ? -1 : 1, dy: 0, align: cx < 0 ? 'right' : 'left' }
+                : { ng, name, col, x: tip.x, y: tip.y, dx: 0, dy: cy < 0 ? -1 : 1, align: 'center' }; });
 // ---- the way there: the shortest route from what you have to any node ----
 function webPath(target) {
-  if (webSet.has(target.id) || webLocked(target)) return null;
+  if (webSet.has(target.id) || webLocked(target) || !webVis(target)) return null;
   const prev = {}, q = [...webSet]; const seen = new Set(q);
   while (q.length) {
     const id = q.shift();
     for (const nb of WEB_ADJ[id] || []) {
       if (seen.has(nb)) continue;
       const n = WEBI[nb];
-      if (n.id === webStart() || (nb !== target.id && (n.t === 'n' || n.t === 'k'))) continue;   // you walk through small nodes and starts
+      if (!webVis(n) || n.id === webStart() || (nb !== target.id && (n.t === 'n' || n.t === 'k'))) continue;   // you walk through small nodes and starts
       seen.add(nb); prev[nb] = id;
       if (nb === target.id) { const path = []; let c = nb; while (c && !webSet.has(c)) { path.unshift(c); c = prev[c]; } return path; }
       q.push(nb);
@@ -8191,7 +8270,7 @@ function webMove(dx, dy) {                                 // keyboard: hop to t
   const c = lvlCard, cur = WEB[c.sel];
   let best = -1, bd = 1e9;
   WEB.forEach((n, i) => {
-    if (i === c.sel) return;
+    if (i === c.sel || !webVis(n)) return;
     const ddx = n.x - cur.x, ddy = n.y - cur.y, along = dx ? ddx * dx : ddy * dy, across = dx ? Math.abs(ddy) : Math.abs(ddx);
     if (along <= 2) return;
     const linked = (WEB_ADJ[cur.id] || []).includes(n.id);
@@ -8244,14 +8323,14 @@ function webUp(x, y, id) {
   if (Object.keys(c.ptrs).length < 2) c.pinch = null;
   if (pt.moved || c.t < 12) return;
   let best = -1, bd = 14;
-  WEB.forEach((n, i) => { const [sx, sy] = webScr(c, n), d = Math.hypot(sx - x, sy - y); if (d < bd) { bd = d; best = i; } });
+  WEB.forEach((n, i) => { if (!webVis(n)) return; const [sx, sy] = webScr(c, n), d = Math.hypot(sx - x, sy - y); if (d < bd) { bd = d; best = i; } });
   if (best < 0) return;
   if (best === c.sel && c.t > 20) { const n = WEB[best]; if (webReady(n)) webLearn(n); else webTakePath(n); } else { c.sel = best; A.tele(); }
 }
 function webDraw() {
   const c = lvlCard, sel = WEB[c.sel], touch = isTouch() && !GP.active;
-  ctx.fillStyle = 'rgba(12,8,24,.97)'; ctx.fillRect(0, 0, LW, LH);
-  ctx.textAlign = 'left'; ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#b388ff'; ctx.fillText('SKILL WEB', 10, 20);
+  ctx.fillStyle = '#0c0818'; ctx.fillRect(0, 0, LW, LH);
+  ctx.textAlign = 'left'; ctx.font = 'bold 12px monospace'; ctx.fillStyle = ngPlus ? '#ff4fa3' : '#b388ff'; ctx.fillText(ngPlus ? 'NG+ WEB' : 'SKILL WEB', 10, 20);
   ctx.font = 'bold 8px monospace'; ctx.fillStyle = pendingPicks ? '#ffd23f' : '#6b6388';
   ctx.fillText('LEVEL ' + level + '   ' + (pendingPicks ? pendingPicks + ' POINT' + (pendingPicks > 1 ? 'S' : '') + ' TO SPEND' : 'no points - keep fighting'), 100, 20);
   if (styleOf()) { ctx.fillStyle = STYLES[styleOf()].col; ctx.fillText('STYLE: ' + STYLES[styleOf()].n, 300, 20); }
@@ -8263,13 +8342,14 @@ function webDraw() {
   ctx.fillStyle = '#100b1f'; ctx.fillRect(V.x, V.y, V.w, V.h);
   ctx.save(); ctx.beginPath(); ctx.rect(V.x, V.y, V.w, V.h); ctx.clip();
   const pulse = (c.t >> 4) % 2;
-  REGIONS.forEach(r => { const [x0, y0] = webScr(c, r), gap = 12 * Math.max(0.85, Math.min(1.4, c.zoom)) + 8;   // a fixed gap past the keystone ring
+  REGIONS.forEach(r => { if (r.ng && !ngPlus) return; const [x0, y0] = webScr(c, r), gap = 12 * Math.max(0.85, Math.min(1.4, c.zoom)) + 8;   // a fixed gap past the keystone ring
     const x = x0 + r.dx * gap, y = y0 + (r.dy ? r.dy * (gap + 4) + (r.dy > 0 ? 4 : 0) : 3);
     ctx.globalAlpha = 0.5; ctx.fillStyle = r.col; ctx.textAlign = r.align;
     ctx.font = 'bold ' + Math.round(Math.max(9, Math.min(16, 14 * c.zoom))) + 'px monospace'; ctx.fillText(r.name, x, y); ctx.globalAlpha = 1; });
   const way = webSet.has(sel.id) || webReady(sel) ? null : webPath(sel), onWay = new Set(way || []);
   WEB_LINKS.forEach(([a, b]) => {
     const A_ = WEBI[a], B_ = WEBI[b], ha = webSet.has(a), hb = webSet.has(b);
+    if (!webVis(A_) || !webVis(B_)) return;
     const [x1, y1] = webScr(c, A_), [x2, y2] = webScr(c, B_);
     const wayLink = (onWay.has(a) || ha) && (onWay.has(b) || hb) && (onWay.has(a) || onWay.has(b));
     ctx.strokeStyle = ha && hb ? '#ffd23f' : wayLink ? '#ffffff' : (ha && webReady(B_)) || (hb && webReady(A_)) ? '#9f8fd0' : '#2e2648';
@@ -8278,10 +8358,11 @@ function webDraw() {
   });
   const z = c.zoom;
   WEB.forEach((n, i) => {
+    if (!webVis(n)) return;
     const [x, y] = webScr(c, n); if (x < V.x - 20 || x > V.x + V.w + 20 || y < V.y - 20 || y > V.y + V.h + 20) return;
     const got = webSet.has(n.id), ready = webReady(n), locked = webLocked(n);
-    const r = (n.t === 's' ? 4 : n.t === 'n' ? 7 : n.t === 'k' ? 9 : 9) * Math.max(0.85, Math.min(1.4, z));
-    let col = n.t === 'k' ? '#ffd23f' : n.t === 'c' ? (n.cls === CLS ? '#ff6b35' : '#6b4a3a') : n.t === 'n' ? (STYLE_OF[n.skill] ? STYLES[STYLE_OF[n.skill]].col : '#b388ff') : '#9e94c0';
+    const r = (n.t === 's' ? 4 : n.t === 'n' || n.t === 'a' ? 7 : 9) * Math.max(0.85, Math.min(1.4, z));
+    let col = n.t === 'a' ? '#ff4fa3' : n.t === 'k' ? '#ffd23f' : n.t === 'c' ? (n.cls === CLS ? '#ff6b35' : '#6b4a3a') : n.t === 'n' ? (STYLE_OF[n.skill] ? STYLES[STYLE_OF[n.skill]].col : '#b388ff') : '#9e94c0';
     ctx.globalAlpha = got || ready ? 1 : locked ? 0.25 : 0.45;
     ctx.fillStyle = got ? col : '#100b1f'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
     ctx.strokeStyle = ready && pendingPicks && pulse ? '#fff' : col; ctx.lineWidth = n.t === 'k' ? 2 : 1.4; ctx.stroke();
@@ -8291,7 +8372,7 @@ function webDraw() {
     if (g && (n.t !== 's' || z >= 0.7)) drawGlyph(g, x, y, n.t === 's' ? 1 : Math.max(1, Math.round(r / 4)), got ? '#14101f' : col);
     ctx.globalAlpha = 1;
     if (i === c.sel) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, r + 5, 0, 7); ctx.stroke(); }
-    if ((n.t === 'n' || n.t === 'k') && (z >= 0.75 || i === c.sel)) {
+    if ((n.t === 'n' || n.t === 'k' || n.t === 'a') && (z >= 0.75 || i === c.sel)) {
       const info = webInfo(n); ctx.font = (n.t === 'k' ? 'bold ' : '') + '6px monospace'; ctx.textAlign = 'center';
       ctx.fillStyle = got ? '#fff' : ready ? '#d1c4e9' : '#5e5680'; ctx.fillText(info.name, x, y + r + 8);
     }
@@ -8336,7 +8417,7 @@ let treeReq = false, autoTree = false, calmT = 0, lvlBanner = null;
 const LVL_BADGE = { x: 212, y: 26, w: 116, h: 16 };
 function openLevelUp() { openTree(); }
 function openTree() {
-  if (!ngPlus) { webOpen(); return; }
+  webOpen(); return;
   const T0 = curTree();
   let sel = T0.findIndex(n => nodeReady(n)); if (sel < 0) sel = 0;
   lvlCard = { sel, t: 0, tab: T0[sel][1] };
@@ -8386,7 +8467,7 @@ function treeMove(dx, dy) {
   else if (dx) treeTab(dx);                                // off the edge: the next tab
 }
 function updateLevelUp() {
-  if (!ngPlus) { webUpdate(); return; }
+  webUpdate(); return;
   const c = lvlCard; c.t++; if (c.pulse) c.pulse--;
   const T0 = curTree();
   for (const k of menuQ.splice(0)) {
@@ -8402,7 +8483,7 @@ function updateLevelUp() {
 }
 const treeDone = () => ({ x: LW - 78, y: 8, w: 68, h: 16 });
 function levelUpTap(x, y) {
-  if (!ngPlus) { webDown(x, y, lastPid); return; }
+  webDown(x, y, lastPid); return;
   const c = lvlCard; if (!c) return;
   const d = treeDone();
   if (x >= d.x && x <= d.x + d.w && y >= d.y && y <= d.y + d.h) { closeTree(); return; }
@@ -8435,7 +8516,7 @@ function bossBreak(e) {
   A.round(); styleAdd('break', 40); logEv('bossbreak');
 }
 function drawLevelUp() {
-  if (!ngPlus) { webDraw(); return; }
+  webDraw(); return;
   const c = lvlCard, T0 = curTree(), BR = ngPlus ? ABS_BRANCHES : BRANCHES;
   ctx.fillStyle = 'rgba(12,8,24,.95)'; ctx.fillRect(0, 0, LW, LH);
   ctx.textAlign = 'left'; ctx.font = 'bold 12px monospace'; ctx.fillStyle = ngPlus ? '#ff4fa3' : '#b388ff';
@@ -9672,6 +9753,23 @@ function drawStageCard() {
   ctx.textAlign = 'left';
 }
 
+/* Smooth drawing: the game thinks 60 times a second; the screen may draw 90 or 120 times.
+   Each actor is drawn between where it was on the last tick and where it is now. */
+const SMOOTH = { list: [] };
+const PERF = { on: false, upd: 0, ren: 0, frames: 0, ticks: 0, worst: 0 };
+function smoothable() { return [player, ...enemies].filter(a => a && !a.dead && !a.lrag); }
+function snapPrev() { smoothable().forEach(a => { a._px = a.x; a._py = a.y; a._pa = a.airY || 0; }); }
+function lerpIn(al) {
+  SMOOTH.list = [];
+  if (al >= 0.999) return;
+  smoothable().forEach(a => {
+    if (a._px === undefined || Math.abs(a.x - a._px) > 24 || Math.abs(a.y - a._py) > 24) return;   // a teleport isn't motion
+    SMOOTH.list.push([a, a.x, a.y, a.airY]);
+    a.x = a._px + (a.x - a._px) * al; a.y = a._py + (a.y - a._py) * al;
+    if (a.airY !== undefined) a.airY = a._pa + ((a.airY || 0) - a._pa) * al;
+  });
+}
+function lerpOut() { SMOOTH.px = player ? player.x + (player.gaitOff || 0) : 0; SMOOTH.list.forEach(([a, x, y, ay]) => { a.x = x; a.y = y; a.airY = ay; }); SMOOTH.list = []; }
 function drawActor(a, isP) {
   if (!(a.ropeT > 0) || a.dead) return drawActorBody(a, isP);
   const up = a.ropeT * 3;                                          // sliding down from the helicopter
@@ -9730,7 +9828,7 @@ function drawActorBody(a, isP) {
     const k = 1 - a.f / a.move.act;
     yoff -= Math.round(Math.sin(k * Math.PI) * 18);
   }
-  if (a.vibeUntil > stateT) lean += (stateT % 2 ? 1 : -1) * (a.vibeAmp || 1);   // shudder while the hit freezes
+  if (a.vibeUntil > stateT) lean += (isP ? ((stateT >> 1) % 2 ? 1 : -1) : (stateT % 2 ? 1 : -1) * (a.vibeAmp || 1));   // shudder while the hit freezes
   if (a.trail && a.trail.length) {                       // afterimages on fast moves
     a.trail.forEach((g, i) => {
       ctx.globalAlpha = 0.12 + 0.09 * i;
@@ -9739,7 +9837,7 @@ function drawActorBody(a, isP) {
     ctx.globalAlpha = 1;
   }
   const flowing = ['dodge', 'vault', 'roll', 'wallkick', 'mantle', 'cutter'].includes(a.st) || a.flipT > 0;    // parkour reads as one clean motion
-  if (isP && a.iframes > 0 && !flowing && Math.floor(a.iframes / 3) % 2 === 0) ctx.globalAlpha = 0.42;
+  if (isP && a.iframes > 0 && !flowing) ctx.globalAlpha = 0.62 + 0.28 * Math.cos(a.iframes * 0.45);   // a soft pulse, not a strobe
 
   if (isP && PF) {
     playerFrame(a); const gx = a.x + lean + (a.gaitOff || 0);
@@ -9850,6 +9948,7 @@ function drawActorBody(a, isP) {
 }
 
 function render() {
+  if (state === 'levelup' && lvlCard && !paused && !menu) { drawLevelUp(); return; }   // the web covers the whole screen: don't paint the room under it
   ctx.save();
   if (shake > 0.4 && SET.shake) ctx.translate(rnd(-shake, shake), rnd(-shake, shake));
   if (Math.abs(camKX) > 0.5 || Math.abs(camKY) > 0.5) ctx.translate(Math.round(camKX), Math.round(camKY));
@@ -9875,6 +9974,12 @@ function render() {
   if (state === 'title') { ctx.restore(); drawTitle(); if (menu) drawMenu(); return; }
 
   pickups.forEach(k => {
+    if (k.orb) {
+      const y = Math.round(k.y - k.z), x = Math.round(k.x), gl = 0.35 + 0.2 * Math.sin(k.t * 0.5);
+      ctx.globalAlpha = gl; ctx.fillStyle = '#76ff03'; ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+      ctx.fillStyle = '#b2ff59'; ctx.fillRect(x - 2, y - 2, 4, 4); ctx.fillStyle = '#fff'; ctx.fillRect(x - 1, y - 2, 1, 1);
+      return;
+    }
     const bob = Math.sin(k.t * 0.12) * 2;
     ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.beginPath(); ctx.ellipse(k.x, k.y, 7, 3, 0, 0, 7); ctx.fill();
     if (k.burger) {                                  // dropped in the rush
@@ -10049,7 +10154,7 @@ function render() {
       g.addColorStop(0, 'rgba(255,40,0,0)'); g.addColorStop(1, 'rgba(255,40,0,' + k + ')');
       ctx.fillStyle = g; ctx.fillRect(0, 0, LW, LH);
     }
-    if (state !== 'scene') { drawChargeBar(); drawHUD(); drawBossBar(); }
+    if (state !== 'scene') { drawLowHP(); drawChargeBar(); drawHUD(); drawBossBar(); }
     if (worldEv) drawWorldEvent();
     if (banner) drawBanner();
   }
@@ -10259,6 +10364,24 @@ function drawChargeBar() {
               ctx.fillText('MAX', p.x, y - 3); ctx.textAlign = 'left'; }
 }
 
+/* nearly done for: the edges of the screen pulse red with a heartbeat (God of War, most modern action games),
+   so you know to back off, block, or go for a finisher's health */
+let VIG = null;
+function lowHPk() { return state === 'play' && player && player.hp > 0 && progressionHP() ? clamp(1 - player.hp / (player.maxhp * 0.28), 0, 1) : 0; }
+const progressionHP = () => !tutorial;
+function drawLowHP() {
+  const k = lowHPk(); if (k <= 0) return;
+  if (!VIG) { VIG = document.createElement('canvas'); VIG.width = LW; VIG.height = LH; const g = VIG.getContext('2d');
+    const gr = g.createRadialGradient(LW / 2, LH / 2, LH * 0.32, LW / 2, LH / 2, LW * 0.56); gr.addColorStop(0, 'rgba(190,0,0,0)'); gr.addColorStop(0.6, 'rgba(190,0,0,.55)'); gr.addColorStop(1, 'rgba(150,0,0,1)');
+    g.fillStyle = gr; g.fillRect(0, 0, LW, LH); }
+  const period = Math.round(56 - 22 * k), ph = classTime % period, beat = ph < 6 ? 1 - ph / 6 : ph > 10 && ph < 16 ? 0.6 * (1 - (ph - 10) / 6) : 0;
+  ctx.globalAlpha = (0.3 + 0.45 * k) * (0.6 + 0.4 * beat); ctx.drawImage(VIG, 0, 0); ctx.globalAlpha = 1;
+}
+function stepLowHP() {
+  const k = lowHPk(); if (k <= 0) return;
+  const period = Math.round(56 - 22 * k), ph = classTime % period;
+  if (ph === 0) A.tone(62, 40, 0.09, 'sine', 0.05 + 0.05 * k); else if (ph === 11) A.tone(55, 36, 0.08, 'sine', 0.035 + 0.04 * k);
+}
 function drawHUD() {
   { const g = ctx.createLinearGradient(0, 0, 0, 52);
     g.addColorStop(0, 'rgba(10,8,20,.62)'); g.addColorStop(0.7, 'rgba(10,8,20,.35)'); g.addColorStop(1, 'rgba(10,8,20,0)');
@@ -10352,7 +10475,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611270027', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611270250', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -10444,7 +10567,14 @@ function drawEnd(title, sub, col) {
   ctx.fillStyle = newBest && (stateT / 12 | 0) % 2 ? '#fff' : '#ffd23f';
   if (endlessMode) ctx.fillText(round + 1 >= endlessBest.wave ? 'NEW BEST WAVE!' : 'best wave ' + endlessBest.wave + '   best score ' + endlessBest.score, LW / 2, 60);
   else ctx.fillText(newBest ? 'NEW PERSONAL BEST!' : 'best ' + best, LW / 2, 60);
-  if (stateT > 70 && Math.floor(stateT / 26) % 2 === 0) {
+  if (state === 'over' && canRetry()) {
+    if (stateT > 70) [['RETRY THIS ROUND', '#8bc34a'], ['START THE CLASS OVER', '#ff8a80']].forEach(([t, c], i) => {
+      const r = OVER_BTN(i), on = overSel === i;
+      ctx.fillStyle = on ? 'rgba(255,255,255,.14)' : 'rgba(0,0,0,.25)'; ctx.fillRect(r.x, r.y, r.w, r.h);
+      if (on) { ctx.strokeStyle = c; ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1); }
+      ctx.font = 'bold 9px monospace'; ctx.fillStyle = on ? c : '#9e94c0'; ctx.fillText((on && !(isTouch() && !GP.active) ? '> ' : '') + t, LW / 2, r.y + 11);
+    });
+  } else if (stateT > 70 && Math.floor(stateT / 26) % 2 === 0) {
     ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#fff';
     ctx.fillText(isTouch() && !GP.active ? 'TAP TO REBOOK' : 'PRESS ' + btn(' ') + ' TO REBOOK', LW / 2, 192);
   }
@@ -10534,7 +10664,12 @@ function fit() {
   cv.style.height = Math.floor(LH * s) + 'px';
   /* draw at the screen's real resolution: the game still thinks in 480x270, but text and thin
      lines come out sharp instead of stretched. Capped at 3x to keep phones fast. */
-  const k = Math.max(1, Math.min(3, Math.ceil(s * (window.devicePixelRatio || 1) - 0.15)));
+  // pick the drawing scale whose final stretch onto the real screen pixels is closest to a whole number:
+  // a 1.5x phone at 2.6 dpr draws at 2x and is doubled almost exactly, instead of drawn at 3x and stretched 31%,
+  // which made pixels 3, 4 or 5 screen pixels wide at random - so anything moving shimmered.
+  const sd = s * (window.devicePixelRatio || 1);
+  let k = 1, best = 1e9;
+  for (let c = 1; c <= 3; c++) { const d = sd / c, e = Math.abs(d - Math.max(1, Math.round(d))) / d + (c === 1 && sd > 1.5 ? 0.06 : 0) - c * 0.001; if (e < best) { best = e; k = c; } }
   if (k !== RES) { RES = k; cv.width = LW * k; cv.height = LH * k; }
   layoutTouch();
 }
@@ -10574,11 +10709,16 @@ function boot() {
   const STEP = 1000 / 60;
   (function loop(now) {
     acc += Math.min(now - last, 100); last = now;
-    while (acc >= STEP) { pollPad(); if (!frozen) update(); acc -= STEP; }
+    if (Math.abs(acc - STEP) < 1.2) acc = STEP;       // a frame that's a hair early or late is still one tick
+    const t0 = PERF.on ? performance.now() : 0;
+    while (acc >= STEP) { snapPrev(); pollPad(); if (!frozen) update(); acc -= STEP; if (PERF.on) PERF.ticks++; if (SMOOTH.rec) SMOOTH.rec.push([+player.x.toFixed(2), player.st, enemies.filter(e => !e.dead).map(e => Math.round(e.x - player.x) + "/" + Math.round(e.y - player.y)).join(","), +player.vx.toFixed(2)]); }
     ctx.setTransform(RES, 0, 0, RES, 0, 0);
     ctx.clearRect(0, 0, LW, LH);
     ctx.imageSmoothingEnabled = false;
-    render(); syncControls();
+    const t1 = PERF.on ? performance.now() : 0;
+    lerpIn(frozen ? 1 : Math.max(0, Math.min(1, acc / STEP))); try { render(); } finally { lerpOut(); }
+    if (PERF.on) { const t2 = performance.now(); PERF.upd += t1 - t0; PERF.ren += t2 - t1; PERF.frames++; PERF.worst = Math.max(PERF.worst, t2 - t0); }
+    syncControls();
     requestAnimationFrame(loop);
   })(performance.now());
 
@@ -10625,7 +10765,7 @@ function boot() {
     evNow: () => { evAt = classTime + 1; return evKey(); },
     crowd: () => enemies.filter(e => e.crowd).map(e => e.type + '@' + Math.round(e.x) + ',' + Math.round(e.y) + ':' + e.st + (e.dead ? 'X' : '') + (e.exited ? 'E' : '')),
     prog: v => { forceProg = !!v; },
-    skills: () => ({ level, xp, need: xpNeed(level), learned: [...learned], passives, pending: pendingPicks, state, ng: ngPlus, calm: calmT, auto: autoTree, alive: enemies.filter(e => !e.dead).map(e => e.type + ':' + e.st + (e.crowd ? 'C' : '') + (e.leaving ? 'L' : '')), sel: lvlCard ? (ngPlus ? (curTree()[lvlCard.sel] || [])[0] : WEB[lvlCard.sel] && WEB[lvlCard.sel].id) : null, web: [...webSet] }),
+    skills: () => ({ level, xp, need: xpNeed(level), learned: [...learned], passives, pending: pendingPicks, state, ng: ngPlus, calm: calmT, auto: autoTree, alive: enemies.filter(e => !e.dead).map(e => e.type + ':' + e.st + (e.crowd ? 'C' : '') + (e.leaving ? 'L' : '')), sel: lvlCard ? WEB[lvlCard.sel] && WEB[lvlCard.sel].id : null, web: [...webSet] }),
     openTree: () => openTree(),
     pip: () => { const e = enemies.find(e => e.t.boss && !e.dead); if (!e) return null; e.pipAt = -999; bossPip(e, 'TEST'); return { pips: e.pips || 0, broken: e.brokenT || 0, st: e.st }; },
     parryTest: big => { const e = enemies.find(e => !e.dead && !e.t.boss && !e.crowd); if (!e) return null; const p = player;
@@ -10681,6 +10821,14 @@ function boot() {
     pauseItem: name => { if (!paused) togglePause(); pauseSel = PAUSE_ITEMS.indexOf(name); },
     audio: () => ({ A, M, TRACKS }),
     wakeAt: f => { if (!wake) startWake(); wake.t = f; },
+    perf: on => { if (on === 'res') return { RES, w: cv.width, css: cv.style.width, dpr: devicePixelRatio }; if (on) { Object.assign(PERF, { on: true, upd: 0, ren: 0, frames: 0, ticks: 0, worst: 0 }); return null; } PERF.on = false; return { upd: +(PERF.upd / Math.max(1, PERF.ticks)).toFixed(2), ren: +(PERF.ren / Math.max(1, PERF.frames)).toFixed(2), worst: +PERF.worst.toFixed(1), fps: PERF.frames, parts: parts.length, blood: (typeof bloodPool !== 'undefined' ? bloodPool.length : -1) }; },
+    die: () => { player.hp = 0; },
+    setHP: n => { player.hp = n; return player.maxhp; },
+    lowhp: () => [lowHPk(), !!tutorial, state, !!VIG],
+    orbs: () => pickups.filter(k => k.orb).length,
+    overSel: () => overSel,
+    tickTrace: n => new Promise(res => { SMOOTH.rec = []; const f = () => { if (SMOOTH.rec.length < n) requestAnimationFrame(f); else { const r = SMOOTH.rec; SMOOTH.rec = null; res(r); } }; f(); }),
+    drawTrace: n => new Promise(res => { const out = []; const f = () => { out.push([+(SMOOTH.px || 0).toFixed(2), playerFrame(player), player.face, player.st]); if (out.length < n) requestAnimationFrame(f); else res(out); }; requestAnimationFrame(f); }),
     webState: () => ({ set: [...webSet], ready: WEB.filter(webReady).map(n => n.id), pts: pendingPicks, sel: lvlCard && WEB[lvlCard.sel] && WEB[lvlCard.sel].id, zoom: lvlCard && lvlCard.zoom, cam: lvlCard && [Math.round(lvlCard.camX), Math.round(lvlCard.camY)] }),
     webTake: (...ids) => ids.map(id => { pendingPicks++; if (!lvlCard) lvlCard = { pulse: 0 }; return webLearn(WEBI[id]); }),
     webSel: id => { if (lvlCard && WEBI[id]) { lvlCard.sel = WEBI[id].i; lvlCard.camX = WEBI[id].x * 0.5 + lvlCard.camX * 0.5; lvlCard.camY = WEBI[id].y * 0.5 + lvlCard.camY * 0.5; } return webPath(WEBI[id]); },
