@@ -205,36 +205,86 @@ const A = {
    chord progression. Bass, drums, an arpeggio and a pad are synthesised
    on the fly and scheduled slightly ahead of the audio clock. */
 const midi = n => 440 * Math.pow(2, (n - 69) / 12);
+/* The music, Mega Drive style: two-operator FM voices (slap bass, brass, electric piano, lead),
+   punchy drums with a gated snare, swing, and songs with an intro, a groove, a lift and fills.
+   Each track: bpm, swing, key (midi), bars of chords, and per-section 16-step patterns.
+   Patterns:  drums  k kick  s snare  c clap  h closed hat  o open hat  t tom (fills)
+              bass   r root  o octave pop  f fifth  b flat seven  3 third  g ghost (muted)  - hold
+              stab   x = brass chord stab        ep  x = electric piano chord
+              lead   scale steps (1 2 3 4 5 6 7 8 9 a b c = 0 2 3 5 7 9 10 12 14 15 17 19), z = -2, y = -5, - hold */
+const CH = { m7: [0, 3, 7, 10], M7: [0, 4, 7, 11], '7': [0, 4, 7, 10], m9: [0, 3, 7, 10, 14], m: [0, 3, 7], M: [0, 4, 7], sus: [0, 5, 7, 10], '7s9': [0, 4, 10, 15], dim: [0, 3, 6, 9] };
+const LEADSTEP = { 1: 0, 2: 2, 3: 3, 4: 5, 5: 7, 6: 9, 7: 10, 8: 12, 9: 14, a: 15, b: 17, c: 19, z: -2, y: -5 };
 const TRACKS = {
-  // slow, moody - plays behind the title
-  title: { bpm: 100, roots: [45, 41, 36, 43], q: ['m', 'M', 'M', 'M'],
-    kick: 'x.......x.......', snare: '............x...', hat: '....x.......x...',
-    bass: 'x.......x...f...', arp: '1...3...4...3...', pad: true, form: ['A', 'B'] },
-  // aerobics synth-pop: four on the floor
-  gym: { bpm: 126, roots: [33, 29, 36, 31], q: ['m', 'M', 'M', 'M'],
-    kick: 'x...x...x...x...', snare: '....x.......x...', hat: '..x...x...x...x.',
-    bass: 'x..xo..xx..xo.x.', arp: '1.3.4.3.5.4.3.2.', pad: true, form: ['A', 'A', 'B', 'B'] },
-  // HIIT: faster, busier, minor
-  hiit: { bpm: 140, roots: [38, 34, 29, 36], q: ['m', 'M', 'M', 'M'],
-    kick: 'x...x...x...x.x.', snare: '....x.......x...', hat: 'xxx.xxx.xxx.xxxx',
-    bass: 'x.xox.xox.xox.xo', arp: '1324132413241324', pad: false, form: ['A', 'B', 'B', 'A', 'B', 'B'] },
-  // the burger joint: doo-wop changes, walking bass
-  diner: { bpm: 116, roots: [36, 33, 29, 31], q: ['M', 'm', 'M', 'M'],
-    kick: 'x.....x.x.......', snare: '....x.......x...', hat: 'x.xxx.xxx.xxx.xx',
-    bass: 'x...f...o...f...', arp: '1.3.5.3.4.3.5.6.', pad: true, form: ['A', 'B', 'B', 'A'] },
-  // the walk home: slow, minor, streetlights humming
-  street: { bpm: 98, roots: [33, 36, 31, 29], q: ['m', 'm', 'M', 'M'],
-    kick: 'x.......x.x.....', snare: '....x.......x...', hat: 'x.x.x.x.x.x.x.xx',
-    bass: 'x..x..o.x..x..o.', arp: '1...3...5...4...', pad: true, form: ['A', 'A', 'B', 'A'] },
-  // home: a sitar-ish drone that should be relaxing and isn't
-  home: { bpm: 112, roots: [38, 38, 36, 34], q: ['m', 'm', 'M', 'm'],
-    kick: 'x.....x...x.....', snare: '....x.......x...', hat: '..x...x...x...xx',
-    bass: 'x...x.o.x...x.o.', arp: '1.2.3.5.6.5.3.2.', pad: true, form: ['A', 'B', 'A', 'B'] },
-  // boss: phrygian, relentless
-  boss: { bpm: 152, roots: [40, 41, 40, 38], q: ['m', 'M', 'm', 'M'],
-    kick: 'x..x..x.x..x..x.', snare: '....x.......x..x', hat: 'x.x.x.x.x.x.x.x.',
-    bass: 'xxoxxxoxxxoxxoxx', arp: '6.5.4.5.6.5.4.3.', pad: true, form: ['A', 'B', 'B', 'B'] }
+  // the title: cool, laid back, electric piano and a hook
+  title: { bpm: 102, swing: 0.1, key: 45, chords: [[0, 'm9'], [-4, 'M7'], [5, 'm9'], [7, '7s9']],
+    form: ['I', 'A', 'A', 'B', 'B', 'F'],
+    I: { k: 'k.....k...k.....', s: '....s.......s...', h: 'h.h.h.h.h.h.h.hh', bass: 'r.....r.g.r..o..', ep: 'x.....x.....x...' },
+    A: { k: 'k.....k...k.....', s: '....s.......s...', h: 'h.h.h.h.h.h.h.hh', bass: 'r.....r.g.r..o.f', ep: 'x.....x.....x...',
+         lead: ['5-....4.5.7.8-..', '7-5-4-3-1-------', '5-....4.5.7.8-..', 'a-9-8-7-8-------'] },
+    B: { k: 'k.....k...k.k...', s: '....s.......s...', h: 'hhohhhohhhohhhoh', bass: 'r..or.g.r.f.o.b.', stab: '......x.......x.',
+         lead: ['8---7-8-a---8---', '7-5-4-5-7-------', '8---7-8-c---b-a-', '9-8-7-5-8-------'] },
+    F: { k: 'k.....k...k.....', s: '....s.......s.ss', t: '..........t.t.t.', h: 'h.h.h.h.h.h.....', bass: 'r.....r.g.r.....' } },
+  // the gym: four-on-the-floor funk, slap bass, a hook you could do aerobics to
+  gym: { bpm: 126, swing: 0.08, key: 40, chords: [[0, 'm7'], [5, '7'], [0, 'm7'], [5, '7']], chordsB: [[-4, 'M7'], [-2, '7'], [-5, 'm7'], [0, 'sus']],
+    form: ['I', 'A', 'A', 'B', 'B', 'F'],
+    I: { k: 'k...k...k...k...', c: '....c.......c...', h: '..h...h...h...h.', bass: 'r.ro..r.gr.ob.f.' },
+    A: { k: 'k...k...k...k...', c: '....c.......c...', h: '..h...h...h...ho', bass: 'r.ro..r.gr.ob.f.', ep: '..x...x...x..x..',
+         lead: ['5.5.7.8-..7.5.4.', '5...4.3.1-......', '5.5.7.8-..a.9.8.', '7...5.4.5-------'] },
+    B: { k: 'k...k...k...k...', c: '....c.......c...', s: '...........s....', h: 'hhohhhohhhohhhoh', bass: 'r.ro.or.gr.ob.fo', stab: 'x.....x...x.....', chords: 'B',
+         lead: ['8-..8-..7.8.a.8.', '7-5-4-3-5-------', '8-..8-..7.8.c.b.', 'a...8...9-------'] },
+    F: { k: 'k...k...k...k...', c: '....c.......c...', t: '........t.t.tttt', h: 'h.h.h.h.........', bass: 'r.ro..r.gr......', chords: 'B' } },
+  // HIIT: breakbeat, faster, minor, relentless
+  hiit: { bpm: 142, swing: 0.04, key: 42, chords: [[0, 'm7'], [-2, 'M'], [-4, 'M'], [-2, 'M']],
+    form: ['I', 'A', 'B', 'A', 'B', 'F'],
+    I: { k: 'k.k.......k.....', s: '....s.......s...', h: 'hhhhhhhhhhhhhhhh', bass: 'r.r.ro.or.r.ro.o' },
+    A: { k: 'k.k.......k.k...', s: '....s..s.s..s...', h: 'hhhohhhohhhohhho', bass: 'r.r.ro.or.r.ro.o', stab: 'x..x..x.........',
+         lead: ['8.8.7.8.a.8.7.5.', '7-------5-------', '8.8.7.8.c.b.a.8.', '9-------8-------'] },
+    B: { k: 'k.k...k...k.k...', s: '....s.......s.s.', c: '....c.......c...', h: 'hhhohhhohhhohhho', bass: 'ro.or.ro.or.ro.b', stab: 'x...x...x...x.x.',
+         lead: ['c-b-a-8-a-b-c---', 'a-8-7-5-7-------', 'c-b-a-8-a-b-c-b-', 'a-------8-------'] },
+    F: { k: 'k.k...k.k.k.k.k.', s: '....s.......ssss', t: '........tttt....', h: 'hhhhhhhh........', bass: 'r.r.ro.or.......' } },
+  // the burger place: disco, octave bass, brass, a cheeky tune
+  diner: { bpm: 118, swing: 0.06, key: 36, chords: [[0, 'M7'], [-3, 'm7'], [2, 'm7'], [7, '7']],
+    form: ['I', 'A', 'A', 'B', 'B', 'F'],
+    I: { k: 'k...k...k...k...', s: '....s.......s...', o: '..o...o...o...o.', bass: 'ro.oro.oro.oro.o' },
+    A: { k: 'k...k...k...k...', s: '....s.......s...', o: '..o...o...o...o.', h: 'h...h...h...h...', bass: 'ro.oro.oro.oro.o', ep: 'x..x..x...x..x..',
+         lead: ['3.4.5-..5.6.5.3.', '4-3-2-1-2-------', '3.4.5-..8.7.6.5.', '6-5-4-3-5-------'], major: true },
+    B: { k: 'k...k...k...k...', s: '....s.......s...', c: '....c.......c...', o: '..o...o...o...o.', bass: 'ro.oro.oro.oro.b', stab: '..x...x...x...x.',
+         lead: ['8---7-6-5---3---', '4-5-6-5-3-------', '8---7-6-5---8---', '9-8-7-6-5-------'], major: true },
+    F: { k: 'k...k...k...k...', s: '....s.......s.ss', t: '..........t.tt..', o: '..o...o...o.....', bass: 'ro.oro.oro......' } },
+  // the walk home: slow night-time funk, streetlights, that Streets of Rage feeling
+  street: { bpm: 98, swing: 0.12, key: 38, chords: [[0, 'm9'], [-4, 'M7'], [-7, 'm7'], [-5, '7s9']],
+    form: ['I', 'A', 'A', 'B', 'A', 'F'],
+    I: { k: 'k.......k.k.....', s: '....s.......s...', h: 'h.h.h.h.h.h.h.hh', bass: 'r..r..o.r..g..o.', ep: 'x.......x.......' },
+    A: { k: 'k.......k.k.....', s: '....s.......s...', h: 'h.h.h.h.h.h.h.hh', bass: 'r..r..o.r..g..o.', ep: 'x.......x...x...',
+         lead: ['5-------4-5-7---', '8-------7-5-4---', '5-------4-5-7---', '4-------3-1-----'] },
+    B: { k: 'k.......k.k.....', s: '....s.......s...', c: '............c...', h: 'hhohhhohhhohhhoh', bass: 'r..r.ro.r..g.or.', stab: '......x.......x.',
+         lead: ['a-------9-8-7---', '8---7---5-------', 'a-------9-8-c---', 'b-a-9-8-7-------'] },
+    F: { k: 'k.......k.k.....', s: '....s.......s.ss', t: '........t...t.t.', h: 'h.h.h.h.h.h.....', bass: 'r..r..o.r.......' } },
+  // home: tense, something's off
+  home: { bpm: 110, swing: 0.06, key: 35, chords: [[0, 'm'], [-4, 'M'], [5, 'm'], [7, '7']],
+    form: ['I', 'A', 'B', 'A', 'B', 'F'],
+    I: { k: 'k.....k...k.....', s: '....s.......s...', h: '..h...h...h...hh', bass: 'r...r.o.r...r.o.' },
+    A: { k: 'k.....k...k.....', s: '....s.......s...', h: '..h...h...h...hh', bass: 'r...r.o.r...r.o.', ep: 'x.......x.......',
+         lead: ['1-3-5-8---7-5---', '4-------3-------', '1-3-5-8---a-8---', '7-------5-------'] },
+    B: { k: 'k.....k...k.k...', s: '....s.......s...', h: 'hhohhhohhhohhhoh', bass: 'r.ror.o.r.ror.o.', stab: 'x.......x.......',
+         lead: ['8-7-5-7-8-a-8---', '7-5-4-3-4-------', '8-7-5-7-8-c-b---', 'a-8-7-5-8-------'] },
+    F: { k: 'k.....k...k.....', s: '....s.......ssss', t: '........tt.tt...', h: '..h...h.........', bass: 'r...r.o.r.......' } },
+  // bosses: fast, phrygian, brass hits, no mercy
+  boss: { bpm: 154, swing: 0, key: 40, chords: [[0, 'm'], [1, 'M'], [0, 'm'], [-2, 'M']],
+    form: ['I', 'A', 'B', 'B', 'A', 'F'],
+    I: { k: 'k..k..k.k..k..k.', s: '....s.......s...', h: 'h.h.h.h.h.h.h.h.', bass: 'rrorrrorrrorrorr', stab: 'x.........x.....' },
+    A: { k: 'k..k..k.k..k..k.', s: '....s.......s..s', h: 'h.h.h.h.h.h.h.h.', bass: 'rrorrrorrrorrorr', stab: 'x.....x...x.....',
+         lead: ['8-8-7-8-a-8-7-5-', '7-----5---4---3-', '8-8-7-8-c-b-a-8-', '9---8---7---5---'] },
+    B: { k: 'k.kk..k.k.kk..k.', s: '....s.......s.s.', c: '....c.......c...', o: '..o...o...o...o.', bass: 'roroororrororoor', stab: 'x..x..x...x..x..',
+         lead: ['c---b---a---8---', 'a-8-7-5-7-8-a---', 'c---b---a---c---', 'b---a---8-------'] },
+    F: { k: 'k..k..k.k.k.k.k.', s: '....s.......ssss', t: '........tttttttt', h: 'h.h.h.h.........', bass: 'rrorrror........' } },
+  // the end: soft electric piano, he's waking up
+  dream: { bpm: 76, swing: 0.1, key: 41, vol: 2.6, chords: [[0, 'M7'], [-1, 'm7'], [-3, 'm7'], [-5, 'M7']],
+    form: ['A', 'A', 'B', 'A'],
+    A: { ep: 'x.......x.......', h: '........h.......', bass: 'r.......f.......', lead: ['5-------3-------', '2-------1-------', '5-------6-5-3---', '2---------------'], major: true },
+    B: { ep: 'x...x...x...x...', k: 'k.......k.......', h: '....h.......h...', bass: 'r.......f...r...', lead: ['8-------7-------', '6-------5-------', '6---5---3---2---', '1---------------'], major: true } }
 };
+const MAJ_STEP = { 1: 0, 2: 2, 3: 4, 4: 5, 5: 7, 6: 9, 7: 11, 8: 12, 9: 14, a: 16, b: 17, c: 19, z: -1, y: -5 };
 
 const M = {
   bus: null, lp: null, on: true, cur: null, tr: null, step: 0, next: 0, timer: null, noiseBuf: null,
@@ -243,6 +293,12 @@ const M = {
     const c = A.ctx;
     this.lp = c.createBiquadFilter(); this.lp.type = 'lowpass'; this.lp.frequency.value = 16000;
     this.bus = c.createGain(); this.bus.gain.value = this.on ? 0.42 * SET.music / 10 : 0;
+    // a short bright room: the gated-reverb snare and a bit of air on the brass
+    this.verb = c.createConvolver(); this.verbG = c.createGain(); this.verbG.gain.value = 0.22;
+    const L = Math.floor(c.sampleRate * 0.5), ir = c.createBuffer(2, L, c.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < L; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / L, 3); }
+    this.verb.buffer = ir; this.send = c.createGain(); this.send.gain.value = 1;
+    this.send.connect(this.verb); this.verb.connect(this.verbG); this.verbG.connect(this.bus);
     this.bus.connect(this.lp); this.lp.connect(A.master);
     const n = c.sampleRate;
     this.noiseBuf = c.createBuffer(1, n, n);
@@ -253,7 +309,8 @@ const M = {
     if (!A.ctx) return;
     this.setup();
     if (this.cur === name) return;
-    this.cur = name; this.tr = TRACKS[name]; this.step = 0;
+    this.cur = name; this.tr = TRACKS[name] || TRACKS.title; this.step = 0;
+    if (this.bus && this.on) this.bus.gain.setTargetAtTime(0.42 * SET.music / 10 * (this.tr.vol || 1), A.ctx.currentTime, 0.3);
     this.next = A.ctx.currentTime + 0.08;
     if (!this.timer) this.timer = setInterval(() => this.pump(), 25);
   },
@@ -264,7 +321,7 @@ const M = {
   },
   toggle() {
     this.on = !this.on;
-    if (this.bus) this.bus.gain.setTargetAtTime(this.on ? 0.42 * SET.music / 10 : 0, A.ctx.currentTime, 0.05);
+    if (this.bus) this.bus.gain.setTargetAtTime(this.on ? 0.42 * SET.music / 10 * ((this.tr && this.tr.vol) || 1) : 0, A.ctx.currentTime, 0.05);
   },
   pump() {
     const c = A.ctx, tr = this.tr;
@@ -272,54 +329,92 @@ const M = {
     const sp = 60 / tr.bpm / 4;
     if (this.next < c.currentTime - 0.25) this.next = c.currentTime + 0.05;   // tab was asleep: skip the backlog
     while (this.next < c.currentTime + 0.13) {
-      if (this.on && A.on) this.tick(tr, this.step, this.next, sp);
+      if (this.on && A.on) this.tick(tr, this.step, this.next + (this.step % 2 ? (tr.swing || 0) * sp : 0), sp);
       this.step++; this.next += sp;
     }
   },
   tick(tr, step, t, sp) {
-    const s = step % 16, bar = (step / 16 | 0);
-    const ci = bar % tr.roots.length;
-    const sec = tr.form[(bar / tr.roots.length | 0) % tr.form.length];
-    const root = tr.roots[ci], third = tr.q[ci] === 'm' ? 3 : 4;
-    if (tr.kick[s] === 'x') this.kick(t);
-    if (tr.snare[s] === 'x') this.snare(t);
-    if (tr.hat[s] === 'x') this.hat(t, s % 4 === 2 ? 0.07 : 0.045);
-    const b = tr.bass[s];
-    if (b !== '.') this.voice(midi(root + (b === 'o' ? 12 : b === 'f' ? 7 : 0)), sp * 1.7, 'sawtooth', 0.2, 900, t);
-    if (sec === 'B' && tr.arp[s] !== '.') {
-      const tones = [0, third, 7, 12, 12 + third, 19];
-      this.voice(midi(root + 36 + tones[+tr.arp[s] - 1]), sp * 1.4, 'square', 0.055, 4200, t);
+    const s = step % 16, bar = (step / 16 | 0), nb = tr.chords.length;
+    const secName = tr.form[(bar / nb | 0) % tr.form.length], sec = tr[secName] || tr.A;
+    const prog = sec.chords === 'B' && tr.chordsB ? tr.chordsB : tr.chords, bi = bar % nb;
+    const [off, q] = prog[bi], root = tr.key + off, chord = CH[q] || CH.m7;
+    const at = (p, ch) => p && p[s] === ch;
+    // drums
+    if (at(sec.k, 'k')) this.kick(t);
+    if (at(sec.s, 's')) this.snare(t, s === 15 || s === 14 ? 0.6 : 1);
+    if (at(sec.c, 'c')) this.clap(t);
+    if (at(sec.h, 'h')) this.hat(t, s % 4 === 2 ? 0.06 : 0.035);
+    if (at(sec.h, 'o') || at(sec.o, 'o')) this.ohat(t);
+    if (at(sec.t, 't')) this.tom(t, 1 - (s % 8) / 14);
+    if (s === 0 && bar > 0 && bar % nb === 0 && secName !== 'A') this.crash(t);
+    // slap bass
+    const b = sec.bass && sec.bass[s];
+    if (b && b !== '.' && b !== '-') {
+      const iv = { r: 0, o: 12, f: 7, b: 10, 3: chord[1], g: 0 }[b] || 0;
+      this.slap(midi(root - 12 + iv), b === 'g' ? 0.05 : b === 'o' ? sp * 1.2 : sp * 1.9, b === 'o', b === 'g', t);
     }
-    if (tr.pad && s === 0) [0, third, 7].forEach(o => this.voice(midi(root + 24 + o), sp * 15, 'triangle', 0.045, 2400, t, 0.12));
-    if (s === 0 && bar > 0 && bar % (tr.roots.length * tr.form.length) === 0) this.crash(t);
+    // electric piano and brass
+    if (at(sec.ep, 'x')) chord.slice(0, 4).forEach((iv, i) => this.ep(midi(root + 24 + iv), sp * 7, t + i * 0.006));
+    if (at(sec.stab, 'x')) chord.slice(0, 3).forEach(iv => this.brass(midi(root + 24 + iv + 12), sp * 1.6, t));
+    // the lead
+    if (sec.lead) {
+      const line = sec.lead[bi % sec.lead.length], ch = line[s];
+      if (ch && ch !== '.' && ch !== '-') {
+        let n = 1; while (line[s + n] === '-') n++;
+        const st = (sec.major ? MAJ_STEP : LEADSTEP)[ch]; if (st != null) this.lead(midi(tr.key + 24 + st), sp * n, t);
+      }
+    }
   },
-  voice(f, dur, type, vol, cut, t, att) {
-    const c = A.ctx, o = c.createOscillator(), g = c.createGain(), fl = c.createBiquadFilter();
-    o.type = type; o.frequency.setValueAtTime(f, t);
-    fl.type = 'lowpass'; fl.frequency.value = cut;
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(vol, t + (att || 0.005));
-    g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
-    o.connect(fl); fl.connect(g); g.connect(this.bus);
-    o.start(t); o.stop(t + dur + 0.03);
+  // ---- two-operator FM: a modulator wobbles the carrier's pitch; the depth envelope is the sound ----
+  fm(f, dur, t, o) {
+    const c = A.ctx, car = c.createOscillator(), mod = c.createOscillator(), mg = c.createGain(), g = c.createGain(), fl = c.createBiquadFilter();
+    car.type = o.wave || 'sine'; car.frequency.setValueAtTime(f, t);
+    mod.type = 'sine'; mod.frequency.setValueAtTime(f * o.ratio, t);
+    const i0 = f * o.idx, i1 = f * (o.idxEnd != null ? o.idxEnd : o.idx * 0.2);
+    if (o.swell) { mg.gain.setValueAtTime(i1, t); mg.gain.linearRampToValueAtTime(i0, t + o.swell); mg.gain.exponentialRampToValueAtTime(Math.max(1, i1), t + o.swell + (o.idxT || 0.2)); }
+    else { mg.gain.setValueAtTime(i0, t); mg.gain.exponentialRampToValueAtTime(Math.max(1, i1), t + (o.idxT || 0.15)); }
+    mod.connect(mg); mg.connect(car.frequency);
+    if (o.vib) { const l = c.createOscillator(), lg = c.createGain(); l.frequency.value = 5.5; lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(f * o.vib, t + Math.min(dur, 0.35)); l.connect(lg); lg.connect(car.frequency); l.start(t); l.stop(t + dur + 0.05); }
+    fl.type = 'lowpass'; fl.frequency.value = o.cut || 8000;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(o.vol, t + (o.att || 0.004));
+    if (o.hold) g.gain.setValueAtTime(o.vol * 0.8, t + Math.max(o.att || 0.004, dur - 0.04));
+    g.gain.exponentialRampToValueAtTime(0.0008, t + dur + (o.rel || 0));
+    car.connect(fl); fl.connect(g); g.connect(this.bus); if (o.wet) g.connect(this.send);
+    car.start(t); mod.start(t); car.stop(t + dur + (o.rel || 0) + 0.03); mod.stop(t + dur + (o.rel || 0) + 0.03);
   },
-  hit(dur, vol, ftype, freq, t, q) {
+  slap(f, dur, pop, ghost, t) {
+    if (ghost) { this.fm(f, 0.05, t, { ratio: 1, idx: 4, idxEnd: 0.5, idxT: 0.03, vol: 0.12, cut: 1800 }); return; }
+    this.fm(f, dur, t, { ratio: 1, idx: pop ? 5.5 : 3.2, idxEnd: 0.6, idxT: pop ? 0.06 : 0.1, vol: pop ? 0.2 : 0.26, cut: pop ? 5200 : 2600 });
+  },
+  ep(f, dur, t) { this.fm(f, dur, t, { ratio: 1, idx: 1.6, idxEnd: 0.15, idxT: 0.35, vol: 0.035, cut: 5000, rel: 0.2, wet: true }); },
+  brass(f, dur, t) { this.fm(f, dur, t, { ratio: 1, idx: 2.6, idxEnd: 0.8, swell: 0.03, idxT: 0.12, vol: 0.05, att: 0.025, cut: 4200, hold: true, wet: true }); },
+  lead(f, dur, t) { this.fm(f, dur, t, { ratio: 1, idx: 1.9, idxEnd: 1.1, idxT: 0.25, vol: 0.055, att: 0.008, cut: 5200, hold: true, vib: 0.012, rel: 0.05, wet: true }); },
+  // ---- drums ----
+  hit(dur, vol, ftype, freq, t, q, wet) {
     const c = A.ctx, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
     s.buffer = this.noiseBuf;
     f.type = ftype; f.frequency.value = freq; f.Q.value = q || 0.8;
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
-    s.connect(f); f.connect(g); g.connect(this.bus);
+    s.connect(f); f.connect(g); g.connect(this.bus); if (wet) g.connect(this.send);
     s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
   },
   kick(t) {
     const c = A.ctx, o = c.createOscillator(), g = c.createGain();
-    o.type = 'sine'; o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
-    g.gain.setValueAtTime(0.75, t); g.gain.exponentialRampToValueAtTime(0.0008, t + 0.2);
-    o.connect(g); g.connect(this.bus); o.start(t); o.stop(t + 0.22);
+    o.type = 'sine'; o.frequency.setValueAtTime(170, t); o.frequency.exponentialRampToValueAtTime(44, t + 0.11);
+    g.gain.setValueAtTime(0.85, t); g.gain.exponentialRampToValueAtTime(0.0008, t + 0.24);
+    o.connect(g); g.connect(this.bus); o.start(t); o.stop(t + 0.26);
+    this.hit(0.012, 0.25, 'highpass', 3000, t);                       // the click
   },
-  snare(t) { this.hit(0.14, 0.32, 'bandpass', 1900, t, 0.7); this.voice(200, 0.08, 'triangle', 0.14, 3000, t); },
-  hat(t, v) { this.hit(0.035, v, 'highpass', 7500, t); },
-  crash(t) { this.hit(0.9, 0.12, 'highpass', 5000, t); }
+  snare(t, v) { v = v || 1; this.hit(0.16, 0.34 * v, 'bandpass', 1800, t, 0.6, true); this.hit(0.07, 0.2 * v, 'highpass', 5000, t);
+                const c = A.ctx, o = c.createOscillator(), g = c.createGain(); o.type = 'triangle'; o.frequency.setValueAtTime(240, t); o.frequency.exponentialRampToValueAtTime(160, t + 0.06);
+                g.gain.setValueAtTime(0.22 * v, t); g.gain.exponentialRampToValueAtTime(0.0008, t + 0.09); o.connect(g); g.connect(this.bus); o.start(t); o.stop(t + 0.1); },
+  clap(t) { for (let i = 0; i < 3; i++) this.hit(0.03, 0.22, 'bandpass', 1300, t + i * 0.011, 1.2); this.hit(0.18, 0.16, 'bandpass', 1300, t + 0.033, 1, true); },
+  hat(t, v) { this.hit(0.03, v, 'highpass', 8000, t); },
+  ohat(t) { this.hit(0.2, 0.05, 'highpass', 7000, t); },
+  tom(t, k) { const c = A.ctx, o = c.createOscillator(), g = c.createGain(); o.type = 'sine';
+              o.frequency.setValueAtTime(260 * k, t); o.frequency.exponentialRampToValueAtTime(110 * k, t + 0.16);
+              g.gain.setValueAtTime(0.4, t); g.gain.exponentialRampToValueAtTime(0.0008, t + 0.2); o.connect(g); g.connect(this.bus); o.start(t); o.stop(t + 0.22); },
+  crash(t) { this.hit(1.1, 0.12, 'highpass', 4500, t, 0.8, true); }
 };
 
 /* ============================== INPUT ============================== */
@@ -615,7 +710,7 @@ cv.addEventListener('pointerdown', e => {
   else if (state === 'intro') introTap(x, y);
   else if (state === 'levelup') levelUpTap(x, y);
   else if (state === 'scene' && x >= SKIP_BTN.x - 6 && y <= SKIP_BTN.y + SKIP_BTN.h + 8) sceneSkipReq = true;
-  else if (['scene', 'over', 'win', 'stage', 'clear', 'credits'].includes(state)) tapGo = true;
+  else if (['scene', 'over', 'win', 'stage', 'clear', 'credits', 'wake'].includes(state)) tapGo = true;
   else if (state === 'play' && pendingPicks > 0 && x > LVL_BADGE.x - 10 && x < LVL_BADGE.x + LVL_BADGE.w + 10 && y > LVL_BADGE.y - 10 && y < LVL_BADGE.y + LVL_BADGE.h + 10) treeReq = true;
 });
 function bagXY(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * LW, (e.clientY - r.top) / r.height * LH]; }
@@ -6718,11 +6813,12 @@ function update() {
   if (state === 'intro') { if (introCard) updateIntroCard(); else state = 'play'; return; }
   if (state === 'levelup') { if (lvlCard) updateLevelUp(); else state = 'play'; return; }
   if (state === 'credits') { updateCredits(); return; }
+  if (state === 'wake') { if (wake) updateWake(); else state = 'credits'; return; }
   if (state === 'stage') {
     const go = stateT > 40 && startPressed();
     clearEdges(); eat(['space', 'enter', 'j', 'k']);
-    if ((go || stateT > 170) && bag.length && !stageBagDone) { stageBagDone = true; openBag('stage'); return; }   // sort the bag first
-    if (go || stateT > 170 || stageBagDone === 'back') {   // a quick cut to the next place, no button needed
+    if ((go || stateT > STAGE_LEN) && bag.length && !stageBagDone) { stageBagDone = true; openBag('stage'); return; }   // sort the bag first
+    if (go || stateT > STAGE_LEN || stageBagDone === 'back') {   // a quick cut to the next place, no button needed
       stageBagDone = false;
       state = 'play'; stateT = 0;
       const heal = Math.min(40, player.maxhp - player.hp);   // he did get his snack
@@ -9119,7 +9215,100 @@ function endingScene() {
   if (raidDone) def.steps.splice(1, 0, { say: 'wife', s: 'and there is a HELICOPTER on the lawn.', pose: { wife: 'point' } }, { say: 'wife', s: 'and is that... the ARMY?', pose: { wife: 'shock' } });
   enemies = enemies.filter(e => e.dead && e.t.boss); spawnQ = []; shots = [];       // his class has quietly left
   wifeOn = false;
-  startScene(def, () => { credits = { t: 0 }; state = 'credits'; stateT = 0; M.play('home'); });
+  startScene(def, () => startWake());
+}
+/* ======================= ...AND THEN HE WOKE UP =======================
+   White-out. A dark bedroom, both of them asleep. 05:59 -> 06:00, the alarm. He sits bolt upright.
+   She mumbles that his first class isn't till tomorrow. It was all a dream. ...the golden whistle
+   in his gym bag glints. Then the credits. */
+let wake = null;
+const WAKE_END = 1020;
+function startWake() { wake = { t: 0, said: {} }; state = 'wake'; stateT = 0; M.stop(); M.muffle(false); }
+function updateWake() {
+  const w = wake; w.t++;
+  if (w.t === 70) M.play('dream');
+  if (w.t >= 250 && w.t < 330 && w.t % 20 === 0) { A.tone(1900, 1900, 0.08, 'square', 0.12); A.tone(1900, 1900, 0.08, 'square', 0.12, 0.1); }   // BEEP BEEP
+  if (w.t === 332) { A.tone(300, 900, 0.15, 'triangle', 0.15); shake = 6; }
+  if (w.t === 860 || w.t === 905) A.tone(2400, 3200, 0.2, 'sine', 0.1);            // ...ting
+  const skip = w.t > 90 && startPressed();
+  clearEdges(); eat(['space', 'enter', 'j', 'k']);
+  if (w.t > WAKE_END || skip) { wake = null; credits = { t: 0 }; state = 'credits'; stateT = 0; M.play('dream'); }
+}
+function wakeBubble(txt, x, y, col, k) {                  // a speech or thought bubble that types itself out
+  const n = Math.min(txt.length, Math.floor(k * 1.4)); const s = txt.slice(0, n);
+  ctx.font = '8px monospace'; const wdt = Math.max(60, ctx.measureText(txt).width + 14);
+  const bx = clamp(x - wdt / 2, 6, LW - wdt - 6);
+  ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.fillRect(bx, y - 14, wdt, 18);
+  ctx.fillStyle = col; ctx.fillRect(bx, y - 14, 3, 18);
+  ctx.fillStyle = '#1b1630'; ctx.textAlign = 'left'; ctx.fillText(s, bx + 8, y - 2);
+}
+function drawWake() {
+  const w = wake, t = w.t;
+  // the camera: the whole room, in on the bed when the alarm goes, then over to the gym bag
+  const tgt = t < 230 ? [1.25, 230, 170] : t < 830 ? [2.1, 170, 186] : [2.1, 392, 206];
+  if (!w.cam) w.cam = tgt.slice();
+  for (let i = 0; i < 3; i++) w.cam[i] += (tgt[i] - w.cam[i]) * (t < 830 ? 0.04 : 0.03);
+  const [ck, cx, cy] = w.cam, toScr = (x, y) => [(x - cx) * ck + LW / 2, (y - cy) * ck + LH / 2];
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, LW, LH);
+  ctx.save(); ctx.translate(LW / 2, LH / 2); ctx.scale(ck, ck); ctx.translate(-cx, -cy);
+  // the room: night, then the first grey of dawn
+  const dawn = clamp((t - 300) / 500, 0, 1);
+  ctx.fillStyle = dawn > 0.5 ? '#2a2847' : '#1b1932'; ctx.fillRect(-300, -200, LW + 600, LH + 400);   // bigger than the screen: the camera moves
+  ctx.fillStyle = '#231f3c'; ctx.fillRect(-300, 214, LW + 600, 300);                                  // floor
+  ctx.fillStyle = '#2e2950'; for (let x = -280; x < LW + 300; x += 40) ctx.fillRect(x, 214, 1, 300);
+  // window: night sky warming up, with the city out there
+  ctx.fillStyle = '#3a3360'; ctx.fillRect(316, 40, 120, 92);
+  ctx.fillStyle = dawn > 0.66 ? '#6b5a8e' : dawn > 0.33 ? '#46407a' : '#151530'; ctx.fillRect(322, 46, 108, 80);
+  ctx.fillStyle = '#ff9e80'; if (dawn > 0.5) { ctx.globalAlpha = (dawn - 0.5) * 1.4; ctx.fillRect(322, 112, 108, 14); ctx.globalAlpha = 1; }
+  ctx.fillStyle = '#0d0b1e'; [[326, 96, 14, 30], [344, 86, 18, 40], [366, 100, 12, 26], [382, 80, 20, 46], [406, 94, 20, 32]].forEach(([x, y, ww, h]) => ctx.fillRect(x, y, ww, h));
+  ctx.fillStyle = '#ffd23f'; [[330, 104], [350, 94], [350, 110], [388, 90], [392, 104], [410, 102]].forEach(([x, y], i) => { if ((i + (t >> 6)) % 3) ctx.fillRect(x, y, 2, 2); });
+  ctx.fillStyle = '#3a3360'; ctx.fillRect(374, 46, 4, 80); ctx.fillRect(322, 84, 108, 3);
+  // nightstand and the clock
+  ctx.fillStyle = '#4e3b2e'; ctx.fillRect(40, 182, 50, 48); ctx.fillStyle = '#3e2e24'; ctx.fillRect(44, 200, 42, 2);
+  ctx.fillStyle = '#111'; ctx.fillRect(48, 166, 34, 16);
+  const alarm = t >= 250 && t < 332, time = t < 250 ? '05:59' : '06:00';
+  ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = alarm && (t >> 3) % 2 ? '#330000' : '#ff3b3b'; ctx.fillText(time, 65, 178);
+  if (alarm) { ctx.fillStyle = '#ff3b3b'; ctx.font = 'bold 8px monospace'; ctx.fillText((t >> 3) % 2 ? 'BEEP BEEP' : '', 65, 158); }
+  // the bed: headboard, pillows, the two of them, the blanket over them
+  ctx.fillStyle = '#5d4037'; ctx.fillRect(100, 150, 12, 80); ctx.fillRect(370, 190, 8, 40);
+  ctx.fillStyle = '#6d4c41'; ctx.fillRect(108, 196, 268, 10);
+  ctx.fillStyle = '#e0e0f0'; ctx.fillRect(114, 176, 56, 14); ctx.fillRect(114, 186, 52, 12);
+  const up = t >= 332, look = up ? (t < 420 ? ((t >> 5) % 2 ? 1 : -1) : 1) : 0;
+  const sat = up && t < 820, lyingBack = t >= 820;
+  // her: asleep, facing away
+  const by = sat ? 198 : 190;
+  ctx.save(); ctx.beginPath(); ctx.rect(100, 140, 52, 60); ctx.clip();             // only heads on the pillows; the rest is under the covers
+  drawCharFrame('wife', 'idle0', 146, 214, 1, null, -Math.PI / 2, null);
+  if (!sat) drawCharFrame(playerSheet(), 'idle0', 150, 222, 1, null, -Math.PI / 2, null);
+  ctx.restore();
+  if (sat) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, LW, by + 1); ctx.clip();       // sat bolt upright, the blanket round his waist
+    drawCharFrame(playerSheet(), look ? 'idle0' : 'frontIdle', 160, 224, look || 1, null, 0, null); ctx.restore(); }
+  ctx.fillStyle = '#5c6bc0'; ctx.fillRect(146, by, 226, 206 - by + 2);                                // the blanket
+  ctx.fillStyle = '#7986cb'; ctx.fillRect(146, by, 226, 3);
+  ctx.fillStyle = '#3f51b5'; for (let x = 160; x < 370; x += 26) ctx.fillRect(x, by + 5, 12, 2);
+  // the gym bag in the corner, and something golden in it
+  ctx.fillStyle = '#263238'; ctx.fillRect(404, 214, 46, 20); ctx.fillStyle = '#37474f'; ctx.fillRect(410, 208, 34, 8);
+  ctx.fillStyle = '#ffd23f'; ctx.fillRect(432, 210, 5, 3);
+  if ((t > 850 && t < 880) || (t > 895 && t < 925)) { ctx.fillStyle = '#fff'; const g = (t % 30) / 3; ctx.fillRect(434, 206 - g, 1, 2 + g * 2); ctx.fillRect(432 - g, 211, 2 + g * 2, 1); }
+  // zzz while they sleep (drawn in the room, under the camera)
+  if (t < 250) { ctx.font = 'bold 8px monospace'; ctx.fillStyle = '#9fa8da'; ctx.textAlign = 'left';
+    for (let i = 0; i < 3; i++) { const k = ((t + i * 40) % 120) / 120; ctx.globalAlpha = 1 - k; ctx.fillText('z', 176 + k * 18 + i * 3, 176 - k * 30); } ctx.globalAlpha = 1; }
+  if (up && t < 350) { ctx.font = 'bold 14px monospace'; ctx.fillStyle = '#ffd23f'; ctx.textAlign = 'center'; ctx.fillText('!!', 164, 166); }
+  ctx.restore();
+  // what's said
+  const B = (from, to, txt, x, y, col) => { if (t >= from && t < to) { const [sx, sy] = toScr(x, y); wakeBubble(txt, sx, clamp(sy, 22, LH - 10), col, t - from); } };
+  B(370, 470, '(...the gym. the burger place. the ARMY...?)', 168, 160, '#ffd23f');
+  B(480, 620, 'mmh... go back to sleep, love.', 130, 176, '#ff80ab');
+  B(620, 740, "your first class isn't till tomorrow.", 130, 176, '#ff80ab');
+  B(745, 835, '(...tomorrow.)', 168, 166, '#ffd23f');
+  B(860, 940, '(...just a dream.)', 392, 190, '#ffd23f');
+  B(940, 1010, '(...right?)', 400, 190, '#ffd23f');
+  // in from white, out to black
+  if (t < 70) { ctx.fillStyle = '#fff'; ctx.globalAlpha = 1 - t / 70; ctx.fillRect(0, 0, LW, LH); ctx.globalAlpha = 1; }
+  if (t > WAKE_END - 60) { ctx.fillStyle = '#000'; ctx.globalAlpha = clamp((t - (WAKE_END - 60)) / 60, 0, 1); ctx.fillRect(0, 0, LW, LH); ctx.globalAlpha = 1; }
+  if (t > 90 && t < WAKE_END - 60) { ctx.font = '6px monospace'; ctx.fillStyle = '#5a5278'; ctx.textAlign = 'right'; ctx.fillText(isTouch() ? 'TAP TO SKIP' : 'ENTER TO SKIP', LW - 8, LH - 6); }
+  ctx.textAlign = 'left';
 }
 
 const CREDITS = [
@@ -9382,50 +9571,104 @@ function drawLootCard() {
   ctx.textAlign = 'left';
 }
 
+/* the walk between places: a little animated scene each time, about five seconds, skippable.
+   gym -> burger place at dusk (stomach growls, the neon buzzes on); burger place -> the walk home
+   at night (the night bus does NOT stop, a cat bolts); the walk home -> home (pink light, OMMMM). */
+const STAGE_LEN = 300;
+function stageBubble(txt, x, y, k) { const n = Math.min(txt.length, Math.floor(k * 1.3)); ctx.font = '7px monospace';
+  const w = ctx.measureText(txt).width + 10, bx = clamp(x - w / 2, 4, LW - w - 4);
+  ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.fillRect(bx, y - 10, w, 13); ctx.fillStyle = '#1b1630'; ctx.textAlign = 'left'; ctx.fillText(txt.slice(0, n), bx + 5, y);
+  ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.fillRect(clamp(x, bx + 4, bx + w - 6), y + 3, 3, 3); }
+function stageCar(x, y, col, dir, bus) {
+  const w = bus ? 70 : 34, h = bus ? 26 : 12;
+  ctx.fillStyle = col; ctx.fillRect(x - w / 2, y - h, w, h);
+  if (!bus) { ctx.fillRect(x - w / 4, y - h - 7, w / 2, 8); ctx.fillStyle = '#90caf9'; ctx.fillRect(x - w / 4 + 2, y - h - 5, w / 2 - 4, 5); }
+  else { ctx.fillStyle = '#90caf9'; for (let i = 0; i < 6; i++) ctx.fillRect(x - w / 2 + 6 + i * 10, y - h + 4, 7, 7);
+         ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 6px monospace'; ctx.textAlign = 'center'; ctx.fillText('NIGHT BUS', x, y - 5); }
+  ctx.fillStyle = '#111'; ctx.fillRect(x - w / 2 + 5, y - 2, 7, 5); ctx.fillRect(x + w / 2 - 12, y - 2, 7, 5);
+  ctx.globalAlpha = 0.18; ctx.fillStyle = '#fff59d';                                       // headlights
+  ctx.beginPath(); ctx.moveTo(x + dir * w / 2, y - 6); ctx.lineTo(x + dir * (w / 2 + 60), y - 16); ctx.lineTo(x + dir * (w / 2 + 60), y + 6); ctx.fill(); ctx.globalAlpha = 1;
+  ctx.fillStyle = '#ff5252'; ctx.fillRect(x - dir * w / 2 - (dir > 0 ? 2 : 0), y - h + 3, 2, 3);
+}
 function drawStageCard() {
-  const t = stateT, next = STAGES[stageOf(round)], prev = stageOf(round) - 1;
-  ctx.fillStyle = '#0d0a18'; ctx.fillRect(0, 0, LW, LH);
-  // skyline
-  ctx.fillStyle = '#1a1530';
-  [[0, 120, 60], [60, 96, 40], [100, 130, 70], [170, 110, 50], [220, 140, 40], [260, 104, 60]].forEach(([x, y, w]) => ctx.fillRect(x, y, w, 200 - y));
-  ctx.fillStyle = '#ffd23f';
-  for (let i = 0; i < 26; i++) if ((i * 7 + (t / 40 | 0)) % 5) ctx.fillRect((i * 37) % 300 + 6, 110 + (i * 23) % 70, 2, 3);
-  const flick = (t % 90) > 4, st = stageOf(round);
-  ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
-  if (st === 2) {                                   // the burger place
-    ctx.fillStyle = '#7a1f1f'; ctx.fillRect(330, 110, 150, 90);
-    ctx.fillStyle = '#1e3550'; ctx.fillRect(344, 140, 50, 40); ctx.fillRect(420, 140, 46, 60);
-  } else if (st === 3) {                            // a long dark street and three streetlights
-    [330, 390, 450].forEach(x => { ctx.fillStyle = '#37474f'; ctx.fillRect(x, 120, 3, 80); ctx.fillStyle = '#fff9c4'; ctx.fillRect(x, 118, 10, 3);
-      ctx.globalAlpha = 0.12; ctx.fillStyle = '#fff3c4'; ctx.beginPath(); ctx.moveTo(x + 5, 121); ctx.lineTo(x - 20, 200); ctx.lineTo(x + 30, 200); ctx.fill(); ctx.globalAlpha = 1; });
-  } else {                                          // home: a little house with one window lit
-    ctx.fillStyle = '#3a2f4a'; ctx.fillRect(350, 130, 110, 70);
-    ctx.beginPath(); ctx.moveTo(340, 132); ctx.lineTo(405, 96); ctx.lineTo(470, 132); ctx.fill();
-    ctx.fillStyle = '#5d4037'; ctx.fillRect(398, 160, 18, 40);
-    ctx.fillStyle = (t >> 4) % 4 ? '#ff80ab' : '#ffd23f'; ctx.fillRect(364, 146, 22, 16);
+  const t = stateT, st = stageOf(round), next = STAGES[st], prev = st - 1, sheet = playerSheet();
+  const night = st >= 3, pv = Math.min(1, t / STAGE_LEN);
+  // sky
+  const skies = { 2: ['#ff8a65', '#ba68c8', '#4527a0'], 3: ['#1a1340', '#120e2c', '#0b0820'], 4: ['#140f30', '#0e0a24', '#08061a'] }[st] || ['#1a1340', '#120e2c', '#0b0820'];
+  ctx.fillStyle = skies[2]; ctx.fillRect(0, 0, LW, LH); ctx.fillStyle = skies[1]; ctx.fillRect(0, 90, LW, 80); ctx.fillStyle = skies[0]; ctx.fillRect(0, 150, LW, 50);
+  if (night) { ctx.fillStyle = '#fff'; for (let i = 0; i < 40; i++) if ((i * 7 + (t >> 4)) % 9) ctx.fillRect((i * 61) % LW, (i * 23) % 120, 1, 1);
+    ctx.fillStyle = '#fff9c4'; ctx.beginPath(); ctx.arc(400, 40, 12, 0, 7); ctx.fill(); ctx.fillStyle = skies[2]; ctx.beginPath(); ctx.arc(405, 37, 11, 0, 7); ctx.fill(); }
+  else { ctx.fillStyle = '#ffe082'; ctx.beginPath(); ctx.arc(330, 168, 18, 0, 7); ctx.fill(); }
+  // the city, slowly sliding by (parallax)
+  const far = -(t * 0.15) % 120, mid = -(t * 0.4) % 160;
+  ctx.fillStyle = night ? '#1c1638' : '#5e35b1';
+  for (let i = -1; i < 6; i++) { const x = far + i * 120; ctx.fillRect(x, 120, 50, 80); ctx.fillRect(x + 60, 100, 34, 100); }
+  ctx.fillStyle = night ? '#140f2a' : '#4527a0';
+  for (let i = -1; i < 5; i++) { const x = mid + i * 160; ctx.fillRect(x, 140, 70, 60); ctx.fillRect(x + 84, 126, 46, 74);
+    ctx.fillStyle = '#ffd23f'; for (let k = 0; k < 6; k++) if ((i + k + (t >> 5)) % 3) ctx.fillRect(x + 8 + (k % 3) * 20, 150 + (k >> 1) * 14, 4, 5); ctx.fillStyle = night ? '#140f2a' : '#4527a0'; }
+  // pavement and road
+  ctx.fillStyle = '#2a2638'; ctx.fillRect(0, 200, LW, 30); ctx.fillStyle = '#3a3550'; ctx.fillRect(0, 200, LW, 2);
+  ctx.fillStyle = '#1b1828'; ctx.fillRect(0, 230, LW, 40); ctx.fillStyle = '#ffd23f'; for (let x = (-(t * 2) % 40); x < LW; x += 40) ctx.fillRect(x, 249, 18, 2);
+  const say = (from, to, txt, x, y) => { if (t >= from && t < to) stageBubble(txt, x, y, t - from); };
+  // him: walking along the pavement
+  let px = Math.min(-20 + t * 1.15, 300), fr = 'walk' + ((t / 5 | 0) % 6), face = 1;
+  if (st === 2) {                                            // GYM -> BURGERS, at dusk
+    ctx.fillStyle = '#37474f'; ctx.fillRect(10, 120, 90, 80); ctx.fillStyle = '#263238'; ctx.fillRect(40, 166, 26, 34);
+    const gymOn = t < 50 || (t < 80 && (t >> 2) % 2);
+    ctx.fillStyle = gymOn ? '#4fc3f7' : '#263238'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.fillText('GYM', 55, 140);
+    ctx.fillStyle = '#7a1f1f'; ctx.fillRect(360, 120, 120, 80); ctx.fillStyle = '#1e3550'; ctx.fillRect(372, 150, 40, 34); ctx.fillRect(430, 150, 34, 50);
+    const neon = t > 170 ? ((t > 190 || (t >> 2) % 2) ? 1 : 0) : 0;
+    ctx.fillStyle = neon ? '#ffd23f' : '#4e3b1e'; ctx.font = 'bold 9px monospace'; ctx.fillText('BIG BELLY', 420, 132); ctx.fillText('BURGERS', 420, 142);
+    if (neon) { ctx.globalAlpha = 0.18; ctx.fillStyle = '#ffd23f'; ctx.fillRect(366, 122, 108, 24); ctx.globalAlpha = 1; }
+    for (let i = 0; i < 4; i++) { const bx = (t * 1.6 + i * 18) % (LW + 80) - 40, by = 60 + i * 5 + Math.sin(t / 6 + i) * 3; ctx.fillStyle = '#311b92'; ctx.fillRect(bx, by, 4, 1); ctx.fillRect(bx + 1, by - 1, 2, 1); }
+    if (t > 100 && t < 160) { px = Math.min(-20 + 100 * 1.15, 300); fr = t < 130 ? 'hurt' : 'idle0'; }   // the stomach
+    else if (t >= 160) px = Math.min(-20 + (t - 60) * 1.15, 300);
+    stageCar(((t * 3.2) % (LW + 160)) - 80, 244, '#e53935', 1); stageCar(LW + 80 - ((t * 2.2 + 200) % (LW + 160)), 262, '#43a047', -1);
+    drawCharFrame(sheet, fr, px, 218, face, null, 0, null);
+    say(100, 160, '*GRRRRUMBLE*', px, 176); say(175, 240, '...burger. just one.', px, 176);
+  } else if (st === 3) {                                     // BURGERS -> THE WAY HOME, at night
+    ctx.fillStyle = '#7a1f1f'; ctx.fillRect(0, 120, 90, 80); ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center'; ctx.fillText('BIG BELLY', 45, 132);
+    [150, 270, 390].forEach((x, i) => { ctx.fillStyle = '#37474f'; ctx.fillRect(x, 120, 3, 80);
+      const on = !(i === 1 && (t % 70) < 6); ctx.fillStyle = on ? '#fff9c4' : '#5d5838'; ctx.fillRect(x - 3, 118, 10, 3);
+      if (on) { ctx.globalAlpha = 0.1; ctx.fillStyle = '#fff3c4'; ctx.beginPath(); ctx.moveTo(x + 1, 121); ctx.lineTo(x - 26, 200); ctx.lineTo(x + 28, 200); ctx.fill(); ctx.globalAlpha = 1; } });
+    // the bins, and the cat on them
+    ctx.fillStyle = '#455a64'; ctx.fillRect(330, 184, 16, 16); ctx.fillRect(348, 186, 14, 14);
+    const catX = t < 200 ? 338 : 338 + (t - 200) * 4, catY = t < 200 ? 180 : 196;
+    ctx.fillStyle = '#212121'; ctx.fillRect(catX, catY, 8, 4); ctx.fillRect(catX + 6, catY - 3, 3, 3); ctx.fillRect(catX - 2, catY - 2, 2, 2);
+    if (t < 200) { ctx.fillStyle = '#ffeb3b'; ctx.fillRect(catX + 7, catY - 2, 1, 1); }
+    // the night bus comes up behind him... and doesn't stop
+    const busX = t < 110 ? -100 : -100 + (t - 110) * 6;
+    if (t > 150 && t < 200) { fr = 'run' + ((t / 4 | 0) % 4); px = Math.min(-20 + 150 * 1.15 + (t - 150) * 2.2, 300); }
+    else if (t >= 200) { px = Math.min(-20 + 150 * 1.15 + 50 * 2.2, 300); fr = t < 250 ? 'idle0' : 'walk' + ((t / 5 | 0) % 6); if (t >= 250) px += (t - 250) * 1.1; }
+    drawCharFrame(sheet, fr, px, 218, face, null, 0, null);
+    ctx.fillStyle = '#8d6e63'; ctx.fillRect(px + 6, 200, 6, 7);                              // the bag of food
+    if (busX < LW + 100) stageCar(busX, 246, '#fb8c00', 1, true);
+    say(150, 200, 'HEY! WAIT!', px, 176); say(205, 255, '...seriously?', px, 176);
+  } else {                                                   // THE WAY HOME -> HOME
+    ctx.fillStyle = '#3a2f4a'; ctx.fillRect(320, 130, 130, 70); ctx.beginPath(); ctx.moveTo(310, 132); ctx.lineTo(385, 90); ctx.lineTo(460, 132); ctx.fill();
+    ctx.fillStyle = '#5d4037'; ctx.fillRect(374, 160, 20, 40);
+    const glow = 0.5 + 0.5 * Math.sin(t / 10);
+    ctx.fillStyle = '#ff80ab'; ctx.fillRect(334, 146, 26, 18); ctx.fillRect(410, 146, 26, 18);
+    ctx.globalAlpha = 0.15 + glow * 0.15; ctx.fillRect(326, 140, 42, 30); ctx.fillRect(402, 140, 42, 30); ctx.globalAlpha = 1;
+    ctx.fillStyle = '#4e342e'; for (let x = 250; x < 320; x += 8) ctx.fillRect(x, 186, 3, 14); ctx.fillRect(250, 188, 70, 2);
+    for (let i = 0; i < 3; i++) { const k = ((t + i * 50) % 150) / 150; ctx.globalAlpha = 1 - k; ctx.fillStyle = '#ff80ab'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(i === 1 ? 'OMMMM' : '~', 384 + Math.sin(k * 6 + i) * 10, 150 - k * 50); } ctx.globalAlpha = 1;
+    px = Math.min(-20 + t * 1.15, 236); if (px >= 236) fr = 'idle' + ((t / 18 | 0) % 2);
+    drawCharFrame(sheet, fr, px, 218, face, null, 0, null);
+    if (px >= 236) { ctx.fillStyle = '#4fc3f7'; ctx.fillRect(px + 10, 168 + ((t >> 3) % 3), 3, 5); }
+    say(230, 300, '(...why is the door open?)', px, 172);
   }
-  if (flick) { ctx.globalAlpha = 0.25; ctx.fillStyle = '#ffd23f'; ctx.fillRect(332, 102, 146, 14); ctx.globalAlpha = 1; }
-  ctx.fillStyle = flick ? '#ffd23f' : '#5a4a20'; ctx.fillText(next.name, 405, 112);
-  // pavement
-  ctx.fillStyle = '#2a2638'; ctx.fillRect(0, 200, LW, 70);
-  ctx.fillStyle = '#3a3550'; ctx.fillRect(0, 200, LW, 3);
-  // him, walking over
-  const x = Math.min(-20 + t * 1.3, 380);
-  const fr = x >= 380 ? 'idle' + ((t / 18 | 0) % 2) : 'walk' + ((t / 5 | 0) % 6);
-  drawCharFrame(playerSheet(), fr, x, 228, 1, null, 0, null);
   // words
-  ctx.font = 'bold 9px monospace'; ctx.fillStyle = '#8bc34a';
-  ctx.fillText('STAGE ' + prev + ' CLEAR', LW / 2, 34);
-  if (t > 30) { ctx.font = '8px monospace'; ctx.fillStyle = '#b8aed0'; ctx.fillText(next.sub + '. badly.', LW / 2, 48); }
-  if (t > 60) {
-    ctx.font = 'bold 22px monospace'; ctx.fillStyle = '#000'; ctx.fillText('STAGE ' + stageOf(round), LW / 2 + 2, 84);
-    ctx.fillStyle = '#ff6b35'; ctx.fillText('STAGE ' + stageOf(round), LW / 2, 82);
+  ctx.textAlign = 'center'; ctx.font = 'bold 9px monospace'; ctx.fillStyle = '#8bc34a';
+  ctx.fillText('STAGE ' + prev + ' CLEAR', LW / 2, 22);
+  if (t > 30) {
+    const k = Math.min(1, (t - 30) / 14);
+    ctx.globalAlpha = k; ctx.font = 'bold 20px monospace'; ctx.fillStyle = '#000'; ctx.fillText(next.name, LW / 2 + 2, 52);
+    ctx.fillStyle = '#ff6b35'; ctx.fillText(next.name, LW / 2, 50);
+    ctx.font = '8px monospace'; ctx.fillStyle = '#e0d7f5'; ctx.fillText(next.sub + '. badly.', LW / 2, 64); ctx.globalAlpha = 1;
   }
-  if (t > 80 && (t / 26 | 0) % 2 === 0) {
-    ctx.font = 'bold 8px monospace'; ctx.fillStyle = '#fff';
-    ctx.fillStyle = '#3a3150'; ctx.fillRect(LW / 2 - 60, 246, 120, 3);
-    ctx.fillStyle = '#ffd23f'; ctx.fillRect(LW / 2 - 60, 246, 120 * Math.min(1, stateT / 170), 3);
-  }
+  ctx.fillStyle = '#3a3150'; ctx.fillRect(LW / 2 - 60, 264, 120, 2); ctx.fillStyle = '#ffd23f'; ctx.fillRect(LW / 2 - 60, 264, 120 * pv, 2);
+  if (t > 40) { ctx.font = '6px monospace'; ctx.fillStyle = '#8a80a8'; ctx.textAlign = 'right'; ctx.fillText(isTouch() ? 'TAP TO SKIP' : 'ENTER TO SKIP', LW - 6, LH - 4); }
   ctx.textAlign = 'left';
 }
 
@@ -9815,6 +10058,7 @@ function render() {
   if (state === 'door' && door) drawDoor();
   if (state === 'scene' && scene) drawScene();
   if (state === 'credits' && credits) drawCredits();
+  if (state === 'wake' && wake) drawWake();
   if (state === 'select') drawSelect();
   if (state === 'loot' && lootCard) drawLootCard();
   if (state === 'bag' && bagCard) drawBag();
@@ -10108,7 +10352,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611270004', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611270027', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -10381,7 +10625,7 @@ function boot() {
     evNow: () => { evAt = classTime + 1; return evKey(); },
     crowd: () => enemies.filter(e => e.crowd).map(e => e.type + '@' + Math.round(e.x) + ',' + Math.round(e.y) + ':' + e.st + (e.dead ? 'X' : '') + (e.exited ? 'E' : '')),
     prog: v => { forceProg = !!v; },
-    skills: () => ({ level, xp, need: xpNeed(level), learned: [...learned], passives, pending: pendingPicks, state, ng: ngPlus, calm: calmT, auto: autoTree, alive: enemies.filter(e => !e.dead).map(e => e.type + ':' + e.st + (e.crowd ? 'C' : '') + (e.leaving ? 'L' : '')), sel: lvlCard && curTree()[lvlCard.sel][0] }),
+    skills: () => ({ level, xp, need: xpNeed(level), learned: [...learned], passives, pending: pendingPicks, state, ng: ngPlus, calm: calmT, auto: autoTree, alive: enemies.filter(e => !e.dead).map(e => e.type + ':' + e.st + (e.crowd ? 'C' : '') + (e.leaving ? 'L' : '')), sel: lvlCard ? (ngPlus ? (curTree()[lvlCard.sel] || [])[0] : WEB[lvlCard.sel] && WEB[lvlCard.sel].id) : null, web: [...webSet] }),
     openTree: () => openTree(),
     pip: () => { const e = enemies.find(e => e.t.boss && !e.dead); if (!e) return null; e.pipAt = -999; bossPip(e, 'TEST'); return { pips: e.pips || 0, broken: e.brokenT || 0, st: e.st }; },
     parryTest: big => { const e = enemies.find(e => !e.dead && !e.t.boss && !e.crowd); if (!e) return null; const p = player;
@@ -10432,8 +10676,11 @@ function boot() {
     touchIn: () => ({ block: !!T.block, charging: !!T.charging, padAct: document.getElementById('apad').classList.contains('act') }),
     setPad: v => { SET.padPos = v; layoutTouch(); },
     bagInfo: () => ({ msg: bagCard && bagCard.msg && bagCard.msg.txt, held: bagCard && bagCard.held && bagCard.held.id, bag: bag.map(b => b.id), cells: bag.map(b => [b.id, b.x, b.y, b.r]), gear: Object.assign({}, gear), state, xp, level, sel: bagCard && bagCard.sel, card: !!bagCard, paused: !!paused }),
-    stageGo: () => { const r = ROUNDS.findIndex(q => (q.stage || 1) === 2); round = r; state = 'stage'; stateT = 0; },
+    stageGo: n => { const r = ROUNDS.findIndex(q => (q.stage || 1) === (n || 2)); round = r; state = 'stage'; stateT = 0; },
+    stageAt: f => { stateT = f; },
     pauseItem: name => { if (!paused) togglePause(); pauseSel = PAUSE_ITEMS.indexOf(name); },
+    audio: () => ({ A, M, TRACKS }),
+    wakeAt: f => { if (!wake) startWake(); wake.t = f; },
     webState: () => ({ set: [...webSet], ready: WEB.filter(webReady).map(n => n.id), pts: pendingPicks, sel: lvlCard && WEB[lvlCard.sel] && WEB[lvlCard.sel].id, zoom: lvlCard && lvlCard.zoom, cam: lvlCard && [Math.round(lvlCard.camX), Math.round(lvlCard.camY)] }),
     webTake: (...ids) => ids.map(id => { pendingPicks++; if (!lvlCard) lvlCard = { pulse: 0 }; return webLearn(WEBI[id]); }),
     webSel: id => { if (lvlCard && WEBI[id]) { lvlCard.sel = WEBI[id].i; lvlCard.camX = WEBI[id].x * 0.5 + lvlCard.camX * 0.5; lvlCard.camY = WEBI[id].y * 0.5 + lvlCard.camY * 0.5; } return webPath(WEBI[id]); },
