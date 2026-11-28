@@ -1605,13 +1605,13 @@ function drawHeldWeapon(p, x, gy) {
   ctx.restore();
 }
 Object.assign(PROPT, {
-  car:      { w: 34, d: 9, h: 22, hp: 70, solid: true,  heavy: 99,  dmg: 0,  name: 'car',      col: '#c62828' },
+  car:      { w: 46, d: 10, h: 32, hp: 70, solid: true,  heavy: 99,  dmg: 0,  name: 'car',      col: '#c62828' },
   bin:      { w: 7,  d: 5, h: 18, hp: 14, solid: false, heavy: 1.6, dmg: 14, name: 'bin',      col: '#455a64' },
-  hydrant:  { w: 5,  d: 4, h: 12, hp: 18, solid: true,  heavy: 99,  dmg: 0,  name: 'hydrant',  col: '#e53935' },
-  newsbox:  { w: 7,  d: 5, h: 16, hp: 12, solid: true,  heavy: 99,  dmg: 0,  name: 'newsbox',  col: '#1e88e5' },
+  hydrant:  { w: 5,  d: 4, h: 18, hp: 18, solid: true,  heavy: 99,  dmg: 0,  name: 'hydrant',  col: '#e53935' },
+  newsbox:  { w: 7,  d: 5, h: 24, hp: 12, solid: true,  heavy: 99,  dmg: 0,  name: 'newsbox',  col: '#1e88e5' },
   cone:     { w: 5,  d: 4, h: 10, hp: 0,  solid: false, heavy: 0.4, dmg: 6,  name: 'cone',     col: '#ff6d00' },
-  lamppost: { w: 3,  d: 3, h: 70, hp: 0,  solid: true,  heavy: 99,  dmg: 0,  name: 'lamppost', col: '#37474f' },
-  shelter:  { w: 28, d: 7, h: 40, hp: 0,  solid: true,  heavy: 99,  dmg: 0,  name: 'shelter',  col: '#546e7a' }
+  lamppost: { w: 3,  d: 3, h: 104, hp: 0,  solid: true,  heavy: 99,  dmg: 0,  name: 'lamppost', col: '#37474f' },
+  shelter:  { w: 32, d: 7, h: 54, hp: 0,  solid: true,  heavy: 99,  dmg: 0,  name: 'shelter',  col: '#546e7a' }
 });
 Object.assign(PROPT, {
   couch:    { w: 30, d: 8, h: 14, hp: 40, solid: true,  heavy: 99, dmg: 0, name: 'couch',    col: '#6d4c41' },
@@ -1663,18 +1663,22 @@ function layoutPropsBase() {
   const diner = state !== 'title' && stageOf(round) === 2;
   const street = state !== 'title' && stageOf(round) === 3;
   const home = state !== 'title' && stageOf(round) === 4;
+  /* Laid out like the real places: equipment against the walls in zones, the middle left open to
+     fight in. Scale: he is ~44px tall, so a metre is about 24px. */
   const spots = home ? [
     ['bench', 72, 246], ['box', 40, 232]
   ] : street ? [
-    ['bench', 72, 246], ['bench', LW - 72, 246], ['box', 40, 214], ['box', LW - 40, 238]
+    ['bench', 214, 188],                                 // a street bench against the shop front
+    ['box', 30, 190], ['box', 52, 192],                  // flattened delivery boxes by the shop door
+    ['box', LW - 30, 190]
   ] : diner ? [
-    ['bench', 72,  246], ['bench', LW - 72, 246],
-    ['box',   40, 184],  ['box',   LW - 40, 186],
-    ['ball',  LW / 2 - 60, 236], ['bell', 318, 200]
+    ['box', 24, 188], ['box', LW - 24, 188],             // bins in the back corners
+    ['bench', 196, 250], ['bench', 284, 250],            // high tables by the front window
+    ['ball', 300, 196], ['bell', 34, 236]                 // a giant soda left on the counter end; the mop bucket by the wall
   ] : [
-    ['bench', 72,  246], ['bench', LW - 72, 246],
-    ['box',   200, 206], ['box',   374, 204],
-    ['ball',  LW / 2 - 60, 234], ['bell', 250, 214]
+    ['bench', 150, 214], ['bench', 208, 214],            // weight benches lined up in front of the mirrors
+    ['box', 56, 190], ['box', 74, 192],                  // supplement deliveries stacked by the cooler
+    ['ball', 330, 252], ['bell', 176, 198]               // a medicine ball by the mats; a kettlebell by the rack
   ];
   // the set dressing for this place: almost all of it breaks
   (home ? [
@@ -1682,26 +1686,33 @@ function layoutPropsBase() {
       ['tv', 140, 184], ['couch', 246, 186], ['aquarium', 330, 186], ['shelf', 420, 181],
       ['ctable', 246, 222], ['lamp', 60, 196], ['plant', 448, 232]
     ] : street ? [
-      ['lamppost', 40, 181], ['lamppost', 250, 181], ['lamppost', 440, 181],
-      ['shelter', 128, 181], ['newsbox', 290, 182], ['car', 372, 192],
-      ['hydrant', 206, 204], ['bin', 92, 214], ['bin', 418, 230], ['cone', 300, 240], ['cone', 168, 238], ['cone', 318, 236]
+      ['shelter', 128, 182], ['newsbox', 290, 184], ['bin', 92, 186], ['bin', 330, 186],   // against the shop fronts
+      ['lamppost', 40, 216], ['lamppost', 250, 216], ['lamppost', 456, 216],             // along the kerb
+      ['hydrant', 196, 216],
+      ['car', 380, 240],                                                                   // parked in the road, along the kerb
+      ['cone', 150, 244], ['cone', 168, 248], ['cone', 186, 244]                          // roadworks, in a row
     ] : diner ? [
       ['counter', 164, 181], ['counter', 212, 181], ['counter', 260, 181],      // the order counter, in sections
-      ['sauce', 330, 178], ['fryer', LW - 76, 214], ['sauce', 74, 222],
-      ['table', 120, 214], ['table', 362, 226],
-      ['chair', 100, 215], ['chair', 141, 217], ['chair', 342, 228], ['chair', 383, 227]
+      ['fryer', 306, 181], ['sauce', 334, 180],                                 // the fryer at the end of the line, sauces beside it
+      ['sauce', 112, 180],                                                      // the self-serve station by the door
+      ['table', 96, 226], ['table', 384, 226],                                  // two tables, chairs either side
+      ['chair', 72, 227], ['chair', 120, 227], ['chair', 360, 227], ['chair', 408, 227]
     ] : [
-      ['mat', 150, 226], ['mat', 338, 232], ['mat', 246, 252],                   // yoga mats
-      ['mirror', 176, 177], ['rack', 236, 178], ['tread', 418, 181], ['bag', 118, 184],
-      ['plyo', 268, 181], ['plyoHi', 290, 181], ['rig', 326, 181],               // a staircase up the back wall: box, big box, the rig
-      ['cooler', 64, 214], ['plant', LW - 64, 218], ['sball', 270, 240], ['sball', 96, 236]
+      ['bag', 26, 184],                                                         // the punchbag hangs in the corner
+      ['cooler', 98, 184], ['plant', 118, 184],                                 // the water cooler by the wall, a plant beside it
+      ['mirror', 140, 177], ['mirror', 160, 177], ['mirror', 180, 177], ['rack', 160, 188],   // the mirror wall, dumbbells in front
+      ['plyo', 268, 181], ['plyoHi', 290, 181], ['rig', 326, 181],               // the functional corner: box, big box, the rig
+      ['tread', 414, 181], ['tread', 458, 181],                                 // a row of treadmills (clear of the rig, so you can climb it)
+      ['mat', 112, 250], ['mat', 170, 250], ['mat', 228, 250],                  // stretching mats, laid out in a row
+      ['sball', 290, 250], ['sball', 310, 252]                                  // the balls beside them
     ]).forEach(([t, x, y]) => {
       const o = makeProp(t, x, y);
       if (t === 'counter' && x === 212) o.reg = true;                            // the till sits in the middle
       props.push(o);
     });
-  // something to swing
-  (home ? [['w_guitar', 180, 250], ['w_pan', 310, 254]] : street ? [['w_pipe', 150, 246], ['w_sign', 330, 252]] : diner ? [['w_pan', 300, 242], ['w_spat', 118, 244]] : [['w_barbell', 150, 244], ['w_mop', 392, 238]])
+  // something to swing, left where it would be
+  (home ? [['w_guitar', 180, 250], ['w_pan', 310, 254]] : street ? [['w_pipe', 168, 232], ['w_sign', 330, 252]]
+    : diner ? [['w_pan', 300, 204], ['w_spat', 220, 204]] : [['w_barbell', 196, 204], ['w_mop', 64, 206]])
     .forEach(([t, x, y]) => props.push(makeProp(t, x, y)));
   // thin it out a bit so the room is not an obstacle course
   spots.forEach(([t, x, y], i) => { if (i < 4 || Math.random() < 0.8) props.push(makeProp(t, x, y)); });
@@ -2274,27 +2285,33 @@ function drawStreetProp(o, lit) {
   const hurt = o.hp && PROPT[o.type] && PROPT[o.type].hp ? o.hp / PROPT[o.type].hp : 1;
   switch (o.type) {
     case 'car': {                                            // a parked hatchback: stand on the roof, smash the windows
-      R(-34, -16, 68, 12, '#c62828'); R(-24, -24, 40, 9, '#b71c1c'); R(-34, -16, 68, 2, '#e57373');
-      R(-21, -22, 15, 6, hurt < 0.5 ? '#263238' : '#90caf9'); R(-3, -22, 16, 6, hurt < 0.5 ? '#263238' : '#90caf9');
-      if (!lit && hurt < 0.75) { ctx.fillStyle = '#eceff1'; ctx.fillRect(-18, -21, 1, 4); ctx.fillRect(2, -22, 1, 5); ctx.fillRect(-12, -10, 6, 1); }
-      R(-30, -6, 12, 6, '#212121'); R(16, -6, 12, 6, '#212121'); R(-27, -4, 6, 3, '#9e9e9e'); R(19, -4, 6, 3, '#9e9e9e');
-      R(31, -14, 3, 3, (o.alarm > 0 && (classTime >> 3) % 2) ? '#ffd23f' : '#fff9c4'); R(-34, -14, 2, 3, '#ff5252');
+      const gl = hurt < 0.5 ? '#263238' : '#90caf9';
+      R(-46, -21, 92, 14, '#c62828'); R(-46, -21, 92, 2, '#e57373'); R(-46, -9, 92, 2, '#8e1b1b');      // body, shoulder line, sill
+      R(-34, -32, 58, 11, '#b71c1c'); R(-32, -33, 50, 1, '#e57373');                                  // the cabin
+      R(24, -29, 4, 8, '#b71c1c'); R(28, -25, 4, 4, '#b71c1c');                                       // sloping windscreen
+      R(-31, -30, 24, 8, gl); R(-4, -30, 24, 8, gl); R(20, -28, 6, 6, gl);                            // rear, front side window, windscreen
+      R(-6, -30, 2, 9, '#8e1b1b'); R(-6, -20, 1, 11, '#8e1b1b'); R(-1, -17, 5, 1, '#eceff1');        // pillar, door line, handle
+      if (!lit && hurt < 0.75) { ctx.fillStyle = '#eceff1'; ctx.fillRect(-27, -29, 1, 5); ctx.fillRect(2, -29, 1, 6); ctx.fillRect(-20, -14, 8, 1); }
+      R(-38, -9, 18, 9, '#212121'); R(20, -9, 18, 9, '#212121'); R(-33, -6, 8, 4, '#9e9e9e'); R(25, -6, 8, 4, '#9e9e9e');   // wheels
+      R(-40, -11, 22, 2, '#7f1717'); R(18, -11, 22, 2, '#7f1717');                                    // wheel arches
+      R(42, -19, 4, 4, (o.alarm > 0 && (classTime >> 3) % 2) ? '#ffd23f' : '#fff9c4'); R(-46, -19, 3, 4, '#ff5252');   // lights
+      R(43, -11, 3, 2, '#9e9e9e'); R(-46, -11, 3, 2, '#9e9e9e');                                      // bumpers
       return true;
     }
     case 'bin': R(-7, -18, 14, 18, '#455a64'); R(-8, -19, 16, 3, '#607d8b'); R(-2, -21, 4, 2, '#90a4ae');
       if (!lit) { ctx.fillStyle = '#37474f'; for (let i = -5; i < 6; i += 4) ctx.fillRect(i, -15, 1, 13); } return true;
-    case 'hydrant': R(-4, -12, 8, 12, '#e53935'); R(-5, -13, 10, 3, '#c62828'); R(-7, -8, 3, 3, '#c62828'); R(4, -8, 3, 3, '#c62828'); R(-2, -15, 4, 2, '#b71c1c'); return true;
-    case 'newsbox': R(-7, -16, 14, 16, '#1e88e5'); R(-6, -14, 12, 6, hurt < 0.6 ? '#263238' : '#e3f2fd');
-      if (!lit && hurt >= 0.6) { ctx.fillStyle = '#90a4ae'; ctx.fillRect(-5, -13, 10, 1); ctx.fillRect(-5, -11, 7, 1); } R(-7, -16, 14, 2, '#1565c0'); return true;
+    case 'hydrant': R(-4, -16, 8, 16, '#e53935'); R(-5, -17, 10, 3, '#c62828'); R(-7, -11, 3, 4, '#c62828'); R(4, -11, 3, 4, '#c62828'); R(-2, -19, 4, 2, '#b71c1c'); R(-5, -2, 10, 2, '#b71c1c'); return true;
+    case 'newsbox': R(-6, -6, 2, 6, '#37474f'); R(4, -6, 2, 6, '#37474f'); R(-7, -24, 14, 18, '#1e88e5'); R(-6, -21, 12, 7, hurt < 0.6 ? '#263238' : '#e3f2fd');
+      if (!lit && hurt >= 0.6) { ctx.fillStyle = '#90a4ae'; ctx.fillRect(-5, -20, 10, 1); ctx.fillRect(-5, -18, 7, 1); } R(-7, -24, 14, 2, '#1565c0'); R(-3, -11, 6, 1, '#0d47a1'); return true;
     case 'cone': R(-5, -2, 10, 2, '#ff6d00'); ctx.fillStyle = lit ? '#fff' : '#ff6d00';
       ctx.beginPath(); ctx.moveTo(-4, -2); ctx.lineTo(4, -2); ctx.lineTo(1, -10); ctx.lineTo(-1, -10); ctx.fill();
       if (!lit) { ctx.fillStyle = '#fff'; ctx.fillRect(-2, -6, 4, 2); } return true;
-    case 'lamppost': R(-2, -70, 4, 70, '#37474f'); R(-2, -72, 12, 3, '#37474f'); R(6, -70, 6, 3, '#fff9c4'); R(-4, -2, 8, 2, '#263238'); return true;
+    case 'lamppost': R(-2, -104, 4, 104, '#37474f'); R(-2, -106, 14, 3, '#37474f'); R(8, -104, 7, 3, '#fff9c4'); R(-4, -3, 8, 3, '#263238'); return true;
     case 'shelter':                                          // bus shelter: glass sides, a roof you can stand on
-      R(-28, -40, 56, 3, '#546e7a'); R(-27, -37, 2, 37, '#37474f'); R(25, -37, 2, 37, '#37474f');
-      ctx.fillStyle = lit ? '#fff' : 'rgba(144,202,249,.25)'; ctx.fillRect(-25, -37, 50, 30);
-      R(-22, -30, 16, 12, '#ffd23f'); if (!lit) { ctx.fillStyle = '#5d4037'; ctx.font = 'bold 5px monospace'; ctx.textAlign = 'center'; ctx.fillText('GYM', -14, -22); ctx.fillText('-50%', -14, -19); ctx.textAlign = 'left'; }
-      R(-12, -12, 24, 3, '#6b421f'); R(-10, -9, 2, 9, '#37474f'); R(8, -9, 2, 9, '#37474f');
+      R(-32, -54, 64, 3, '#546e7a'); R(-31, -51, 2, 51, '#37474f'); R(29, -51, 2, 51, '#37474f');
+      ctx.fillStyle = lit ? '#fff' : 'rgba(144,202,249,.25)'; ctx.fillRect(-29, -51, 58, 42);
+      R(-26, -44, 18, 26, '#ffd23f'); if (!lit) { ctx.fillStyle = '#5d4037'; ctx.font = 'bold 5px monospace'; ctx.textAlign = 'center'; ctx.fillText('GYM', -17, -33); ctx.fillText('-50%', -17, -28); ctx.textAlign = 'left'; }
+      R(-12, -12, 30, 3, '#6b421f'); R(-10, -9, 2, 9, '#37474f'); R(14, -9, 2, 9, '#37474f');
       return true;
     case 'bench': R(-21, -11, 42, 3, '#6d4c41'); R(-21, -15, 42, 2, '#5d4037'); R(-18, -8, 2, 8, '#37474f'); R(16, -8, 2, 8, '#37474f'); return true;
     case 'box': {                                            // a soggy cardboard box
@@ -4519,7 +4536,7 @@ function continueRun() {
   if (ngPlus && !(cp.web && cp.web.length > 12)) {          // a NEW GAME+ save from the old tree: the full web, plus the ABSURD picks it had
     learned = new Set((cp.skills || []).concat(BASE_SKILLS)); passives = {}; ngWebBase();
     Object.keys(ABSURD).forEach(id => { if (learned.has(id) && WEBI['ab_' + id]) webSet.add('ab_' + id); });
-  } else if (cp.web && cp.web.includes(webStart())) webSet = new Set(cp.web.filter(id => WEBI[id]));
+  } else if (cp.web && cp.web.includes(webStart())) { webSet = new Set(cp.web.filter(id => WEBI[id])); webSet.forEach(id => { const n = WEBI[id]; if (n.t === 'n' && SKILLS[n.skill]) learned.add(n.skill); }); }
   else if (!ngPlus) {                                   // a save from before the web: start fresh on it, with every point back
     learned = new Set(BASE_SKILLS); passives = {}; webSet = new Set([webStart()]);
     pendingPicks = Math.max(pendingPicks, (level - 1) * 2); refund = level > 1;
@@ -5803,8 +5820,8 @@ function updatePlayer() {
   p.blocking = false;
   const fresh = mag > 0.55 && (p.prevMag || 0) < 0.35;
   p.prevMag = mag;
-  if (!air && wantBlock && fresh && p.stam >= 18 && has('dodge') && !keystone('k_iron')) { startDodge(ix, iy); clearEdges(); return; }   // block + a direction = dodge
-  if (!air && p.tapDodgeT > 0 && !wantBlock && p.stam >= 18 && has('dodge') && !keystone('k_iron')) {   // quick tap of BLOCK = dodge
+  if (!air && wantBlock && fresh && p.stam >= dodgeCost(p) && has('dodge') && !keystone('k_iron')) { startDodge(ix, iy); clearEdges(); return; }   // block + a direction = dodge
+  if (!air && p.tapDodgeT > 0 && !wantBlock && p.stam >= dodgeCost(p) && has('dodge') && !keystone('k_iron')) {   // quick tap of BLOCK = dodge
     p.tapDodgeT = 0;
     let ax = ix, ay = iy;
     if (Math.hypot(ix, iy) < 0.3) {                   // no direction held: step away from whoever is closest (or about to hit you)
@@ -6165,9 +6182,10 @@ function resolvePlayerAttack(mv) {
   });
 }
 
+const dodgeCost = p => (C().dodgeStam || 18) * (1 - perk('dodgeCost'));
 function startDodge(ix, iy) {
   const p = player;
-  p.stam -= (C().dodgeStam || 18) * (1 - perk('dodgeCost'));
+  p.stam -= dodgeCost(p);
   p.setState('dodge', 22);
   p.iframes = C().dodgeIF || 15; p.dodgeT = 0; p.blocking = false;
   checkPerfect(p, 'dodge');
@@ -6192,7 +6210,7 @@ function threatsOn(p) {
   });
 }
 function checkPerfect(p, how) {
-  if (witchT > 0 || !has('dodge')) return;
+  if (witchT > 0 || !has('slowdodge')) return;
   const t = threatsOn(p).filter(e => how === 'dodge' || e.move.kind === 'red');
   if (!t.length && !(absurd('bullet') && how === 'dodge')) return;
   t.forEach(e => { if (e.t.boss) bossPip(e, 'DODGE'); });
@@ -7905,16 +7923,16 @@ const ROOMS = {
     panes: [[34, 48, 50, 42], [94, 48, 50, 42]],
     decor: [['sign', 214, 52, 54, 16, 'NO RUNNING'], ['clock', 270, 30, 14, 14], ['poster', 188, 96, 24, 30, 'SWOLE'], ['poster', 240, 96, 24, 30, 'HYDRATE']],
     props: [['locker', 200, 182], ['locker', 226, 182], ['locker', 252, 182], ['towelbin', 290, 196], ['wetsign', 150, 232], ['wetsign', 336, 246],
-            ['plant', 450, 236], ['mat', 380, 250]],
-    weapons: [['w_mop', 120, 248], ['w_barbell', 360, 238]],
-    spots: [['bench', 100, 222], ['bench', 330, 216], ['box', 40, 236], ['box', LW - 40, 228]] },
+            ['plant', 450, 236]],
+    weapons: [['w_mop', 150, 244], ['w_barbell', 300, 226]],
+    spots: [['bench', 226, 222], ['bench', 226, 246], ['box', 40, 190], ['box', 300, 190]] },     // benches down the middle, like a real locker room
   kitchen: { name: 'THE KITCHEN', indoor: true, kind: 'diner', draw: () => drawKitchen(),
     panes: [[380, 52, 72, 42]],
     decor: [['pans', 240, 70, 78, 16], ['clock', 40, 30, 14, 14], ['sign', 82, 104, 50, 14, 'WASH HANDS'], ['poster', 330, 100, 22, 28, 'MENU']],
     props: [['stove', 150, 182], ['stove', 186, 182], ['fryer', 230, 184], ['fridge', 290, 181], ['sink', 70, 184],
-            ['prep', 210, 230], ['sauce', 330, 220], ['box', 420, 198], ['chair', 380, 236]],
+            ['prep', 210, 230], ['sauce', 316, 182], ['box', 452, 188], ['box', 40, 234]],   // sauces by the fridge, bins in the corners
     weapons: [['w_pan', 280, 248], ['w_spat', 130, 250]],
-    spots: [['box', 40, 236], ['box', LW - 40, 246], ['ball', 160, 244]] },
+    spots: [['box', LW - 40, 246], ['ball', 250, 230]] },
   alley: { name: 'THE ALLEY', indoor: false, kind: 'street', draw: () => drawAlley(),
     panes: [[146, 52, 30, 26], [196, 52, 30, 26], [322, 46, 30, 26]],
     decor: [['acunit', 160, 90, 22, 14], ['acunit', 338, 92, 22, 14], ['neon', 268, 60, 40, 14, 'BAR'], ['sign', 92, 70, 40, 12, 'NO PARKING']],
@@ -8441,7 +8459,8 @@ const SKILLS = {
   quake:    { n: 'GROUND QUAKE',     tier: 3, how: 'a fully charged HEAVY', desc: 'a full charge cracks the floor: everyone close goes down.' },
   heavy:    { n: 'HAYMAKER',         tier: 1, how: 'HEAVY', desc: 'a big, slow hit that knocks people back.' },
   grab:     { n: 'GRAB & THROW',     tier: 1, how: 'GRAB someone reeling or knocked down - then throw them', desc: 'pick people (and furniture) up and throw them at each other.' },
-  dodge:    { n: 'DODGE',            tier: 1, how: 'TAP BLOCK', desc: 'roll out of the way. do it at the last moment and time slows down.' },
+  dodge:    { n: 'DODGE',            tier: 1, how: 'TAP BLOCK', desc: 'roll out of the way. everyone knows this one.' },
+  slowdodge:{ n: 'PERFECT DODGE',    tier: 1, how: 'TAP BLOCK right as they swing', desc: 'dodge at the very last moment and time slows down for everyone but you.' },
   parry:    { n: 'PARRY & COUNTER',  tier: 2, how: 'BLOCK just before a hit lands', desc: 'stagger them and hit straight back.' },
   air:      { n: 'AIR ATTACKS',      tier: 2, how: 'LIGHT or HEAVY in the air', desc: 'kicks and slams in mid-air. jump out of a combo to juggle.' },
   dash:     { n: 'DASH ATTACK',      tier: 2, how: 'run, then LIGHT', desc: 'a running strike that closes the gap.' },
@@ -8503,7 +8522,7 @@ function skillFx(key) {
   for (const id in ABSURD) if (ABSURD[id].fx && ABSURD[id].fx[key] && learned.has(id)) v += ABSURD[id].fx[key];
   return v;
 }
-const BASE_SKILLS = ['grab', 'parry', 'finisher', 'heavy', 'air'];      // everyone walks in knowing these
+const BASE_SKILLS = ['grab', 'parry', 'finisher', 'heavy', 'air', 'dodge'];      // everyone walks in knowing these
 function initSkills() {
   learned = new Set(BASE_SKILLS); passives = {}; level = 1; xp = 0; pendingPicks = 0; lvlCard = null;
   webSet = new Set([webStart()]); webLearn.said = 0;
@@ -8542,8 +8561,8 @@ const TREE = [
   ['dash', 3, 2, 1, ['dodge']], ['heart', 3, 0, 2, ['weapons']], ['whistle', 3, 1, 2, ['skin']], ['sprint', 3, 2, 2, ['dash']], ['cardio', 3, 2, 3, ['sprint']]
 ];
 /*WEB_DATA*/
-const WEB = [{"id":"h0","x":0.0,"y":-78.0,"t":"s","fx":{"hp":5}},{"id":"h1","x":67.5,"y":-39.0,"t":"s","fx":{"tough":0.02}},{"id":"h2","x":67.5,"y":39.0,"t":"s","fx":{"hp":5}},{"id":"h3","x":0.0,"y":78.0,"t":"s","fx":{"tough":0.02}},{"id":"h4","x":-67.5,"y":39.0,"t":"s","fx":{"hp":5}},{"id":"h5","x":-67.5,"y":-39.0,"t":"s","fx":{"tough":0.02}},{"id":"heart_n","x":0,"y":0,"t":"n","skill":"heart"},{"id":"start_yoga","x":0.0,"y":-150.0,"t":"c","cls":"yoga"},{"id":"start_bb","x":-129.9,"y":75.0,"t":"c","cls":"bb"},{"id":"start_cyc","x":129.9,"y":75.0,"t":"c","cls":"cyc"},{"id":"box_s0","x":-193.0,"y":34.0,"t":"s","fx":{"jab":0.05}},{"id":"box1_n","x":-197.5,"y":8.4,"t":"n","skill":"box1","req":null},{"id":"box_s1","x":-234.4,"y":41.3,"t":"s","fx":{"jab":0.05}},{"id":"box2_n","x":-229.9,"y":66.9,"t":"n","skill":"box2","req":"box1"},{"id":"box_s2","x":-275.7,"y":48.6,"t":"s","fx":{"stam":0.1}},{"id":"handspd_n","x":-280.2,"y":23.0,"t":"n","skill":"handspd","req":"box2"},{"id":"box_s3","x":-317.1,"y":55.9,"t":"s","fx":{"jab":0.05}},{"id":"box3_n","x":-312.6,"y":81.5,"t":"n","skill":"box3","req":"handspd"},{"id":"box_s4","x":-358.5,"y":63.2,"t":"s","fx":{"jab":0.05}},{"id":"k_glass","x":-405.7,"y":71.5,"t":"k","name":"GLASS JAW","desc":"+40% damage. you take 25% more.","fx":{"dmg":0.4,"tough":-0.25}},{"id":"kick_s0","x":-60.6,"y":-186.4,"t":"s","fx":{"kick":0.05}},{"id":"kick1_n","x":-35.9,"y":-194.4,"t":"n","skill":"kick1","req":null},{"id":"kick_s1","x":-73.5,"y":-226.4,"t":"s","fx":{"kick":0.05}},{"id":"kick2_n","x":-98.2,"y":-218.4,"t":"n","skill":"kick2","req":"kick1"},{"id":"kick_s2","x":-86.5,"y":-266.3,"t":"s","fx":{"reach":3}},{"id":"legs_n","x":-61.8,"y":-274.3,"t":"n","skill":"legs","req":"kick2"},{"id":"kick_s3","x":-99.5,"y":-306.2,"t":"s","fx":{"kick":0.05}},{"id":"kick3_n","x":-124.2,"y":-298.2,"t":"n","skill":"kick3","req":"legs"},{"id":"kick_s4","x":-112.5,"y":-346.2,"t":"s","fx":{"kick":0.05}},{"id":"k_wind","x":-127.3,"y":-391.8,"t":"k","name":"SECOND WIND","desc":"once per area, dropping under 30% health heals 30 and refills stamina. -15 max health.","fx":{"hp":-15}},{"id":"mix_s0","x":193.0,"y":34.0,"t":"s","fx":{"dmg":0.03}},{"id":"mix1_n","x":188.5,"y":59.6,"t":"n","skill":"mix1","req":null},{"id":"mix_s1","x":234.4,"y":41.3,"t":"s","fx":{"dmg":0.03}},{"id":"mix2_n","x":238.9,"y":15.7,"t":"n","skill":"mix2","req":"mix1"},{"id":"mix_s2","x":275.7,"y":48.6,"t":"s","fx":{"clinch":0.1}},{"id":"flow_n","x":271.2,"y":74.2,"t":"n","skill":"flow","req":"mix2"},{"id":"mix_s3","x":317.1,"y":55.9,"t":"s","fx":{"dmg":0.03}},{"id":"mix3_n","x":321.6,"y":30.3,"t":"n","skill":"mix3","req":"flow"},{"id":"mix_s4","x":358.5,"y":63.2,"t":"s","fx":{"dmg":0.03}},{"id":"k_brawl","x":405.7,"y":71.5,"t":"k","name":"BRAWLER'S INSTINCT","desc":"every third hit of a combo staggers them. combos cost 30% more stamina.","fx":{}},{"id":"hvy_s0","x":0.0,"y":150.0,"t":"s","fx":{"heavyK":0.06}},{"id":"protein_n","x":-26.0,"y":150.0,"t":"n","skill":"protein","req":null},{"id":"hvy_s1","x":0.0,"y":192.0,"t":"s","fx":{"heavyK":0.06}},{"id":"charge_n","x":26.0,"y":192.0,"t":"n","skill":"charge","req":null},{"id":"hvy_s2","x":0.0,"y":234.0,"t":"s","fx":{"furyK":0.1}},{"id":"launch_n","x":-26.0,"y":234.0,"t":"n","skill":"launch","req":null},{"id":"hvy_s3","x":0.0,"y":276.0,"t":"s","fx":{"heavyK":0.06}},{"id":"quake_n","x":26.0,"y":276.0,"t":"n","skill":"quake","req":"charge"},{"id":"hvy_s4","x":0.0,"y":318.0,"t":"s","fx":{"heavyK":0.06}},{"id":"k_iron","x":0.0,"y":366.0,"t":"k","name":"IRON WILL","desc":"nothing knocks you down. you can not dodge.","fx":{"tough":0.05}},{"id":"temper_n","x":30.0,"y":234.0,"t":"n","skill":"temper","req":null},{"id":"air_s0","x":70.4,"y":-132.4,"t":"s","fx":{"airK":0.06}},{"id":"hang_n","x":93.4,"y":-120.2,"t":"n","skill":"hang","req":null},{"id":"air_s1","x":90.1,"y":-169.5,"t":"s","fx":{"airK":0.06}},{"id":"parkour_n","x":67.1,"y":-181.7,"t":"n","skill":"parkour","req":null},{"id":"air_s2","x":109.9,"y":-206.6,"t":"s","fx":{"speed":0.04}},{"id":"wallkick_n","x":132.9,"y":-194.4,"t":"n","skill":"wallkick","req":"parkour"},{"id":"air_s3","x":129.6,"y":-243.7,"t":"s","fx":{"airK":0.06}},{"id":"dfa_n","x":106.6,"y":-255.9,"t":"n","skill":"dfa","req":null},{"id":"air_s4","x":149.3,"y":-280.8,"t":"s","fx":{"airK":0.06}},{"id":"k_berserk","x":171.8,"y":-323.2,"t":"k","name":"BERSERKER","desc":"fury fills twice as fast and hits 25% harder. blocking costs double stamina.","fx":{"furyK":1,"blockCost":1}},{"id":"cutter_n","x":83.4,"y":-220.7,"t":"n","skill":"cutter","req":null},{"id":"def_s0","x":-129.9,"y":-75.0,"t":"s","fx":{"tough":0.03}},{"id":"skin_n","x":-116.9,"y":-97.5,"t":"n","skill":"skin","req":null},{"id":"def_s1","x":-166.3,"y":-96.0,"t":"s","fx":{"parry":2}},{"id":"dodge_n","x":-179.3,"y":-73.5,"t":"n","skill":"dodge","req":null},{"id":"def_s2","x":-202.6,"y":-117.0,"t":"s","fx":{"witchK":0.2}},{"id":"dash_n","x":-189.6,"y":-139.5,"t":"n","skill":"dash","req":"dodge"},{"id":"def_s3","x":-239.0,"y":-138.0,"t":"s","fx":{"tough":0.03}},{"id":"whistle_n","x":-252.0,"y":-115.5,"t":"n","skill":"whistle","req":null},{"id":"def_s4","x":-275.4,"y":-159.0,"t":"s","fx":{"stam":0.1}},{"id":"k_second","x":-317.0,"y":-183.0,"t":"k","name":"UNTOUCHABLE","desc":"a much wider parry window, and perfect parries and dodges heal 8. normal blocks let 30% through.","fx":{"parry":4}},{"id":"weapons_n","x":-151.3,"y":-122.0,"t":"n","skill":"weapons","req":null},{"id":"sprint_n","x":-224.0,"y":-164.0,"t":"n","skill":"sprint","req":"dash"},{"id":"cardio_n","x":-288.4,"y":-136.5,"t":"n","skill":"cardio","req":null},{"id":"ab_gigafist","x":105.9,"y":135.5,"t":"a","skill":"gigafist"},{"id":"ab_stylengine","x":133.0,"y":170.2,"t":"a","skill":"stylengine"},{"id":"ab_tornado","x":160.1,"y":204.9,"t":"a","skill":"tornado"},{"id":"ab_vampire","x":187.2,"y":239.6,"t":"a","skill":"vampire"},{"id":"ab_magnet","x":-96.2,"y":142.6,"t":"a","skill":"magnet"},{"id":"ab_explode","x":-120.8,"y":179.1,"t":"a","skill":"explode"},{"id":"ab_wmaster","x":-145.4,"y":215.5,"t":"a","skill":"wmaster"},{"id":"ab_ironskin","x":-170.0,"y":252.0,"t":"a","skill":"ironskin"},{"id":"ab_djump","x":193.7,"y":-86.2,"t":"a","skill":"djump"},{"id":"ab_bullet","x":233.9,"y":-104.1,"t":"a","skill":"bullet"},{"id":"ab_meteor","x":274.1,"y":-122.0,"t":"a","skill":"meteor"},{"id":"ab_fengine","x":314.3,"y":-139.9,"t":"a","skill":"fengine"}];
-const WEB_LINKS = [["ab_bullet","ab_djump"],["ab_bullet","ab_meteor"],["ab_djump","mix_s0"],["ab_explode","ab_magnet"],["ab_explode","ab_wmaster"],["ab_fengine","ab_meteor"],["ab_gigafist","ab_stylengine"],["ab_gigafist","start_cyc"],["ab_ironskin","ab_wmaster"],["ab_magnet","start_bb"],["ab_stylengine","ab_tornado"],["ab_tornado","ab_vampire"],["air_s0","air_s1"],["air_s0","h1"],["air_s0","hang_n"],["air_s0","start_cyc"],["air_s0","start_yoga"],["air_s1","air_s2"],["air_s1","parkour_n"],["air_s2","air_s3"],["air_s2","cutter_n"],["air_s2","wallkick_n"],["air_s3","air_s4"],["air_s3","dfa_n"],["air_s4","k_berserk"],["box1_n","box_s0"],["box2_n","box_s1"],["box3_n","box_s3"],["box_s0","box_s1"],["box_s0","start_bb"],["box_s1","box_s2"],["box_s2","box_s3"],["box_s2","handspd_n"],["box_s3","box_s4"],["box_s4","k_glass"],["cardio_n","def_s4"],["charge_n","hvy_s1"],["dash_n","def_s2"],["def_s0","def_s1"],["def_s0","h5"],["def_s0","skin_n"],["def_s0","start_bb"],["def_s0","start_yoga"],["def_s1","def_s2"],["def_s1","dodge_n"],["def_s1","weapons_n"],["def_s2","def_s3"],["def_s3","def_s4"],["def_s3","sprint_n"],["def_s3","whistle_n"],["def_s4","k_second"],["flow_n","mix_s2"],["h0","h1"],["h0","h5"],["h0","start_yoga"],["h1","h2"],["h1","heart_n"],["h2","h3"],["h2","start_cyc"],["h3","h4"],["h3","heart_n"],["h3","hvy_s0"],["h4","h5"],["h4","start_bb"],["h5","heart_n"],["hvy_s0","hvy_s1"],["hvy_s0","protein_n"],["hvy_s0","start_bb"],["hvy_s0","start_cyc"],["hvy_s1","hvy_s2"],["hvy_s2","hvy_s3"],["hvy_s2","launch_n"],["hvy_s2","temper_n"],["hvy_s3","hvy_s4"],["hvy_s3","quake_n"],["hvy_s4","k_iron"],["k_brawl","mix_s4"],["k_wind","kick_s4"],["kick1_n","kick_s0"],["kick2_n","kick_s1"],["kick3_n","kick_s3"],["kick_s0","kick_s1"],["kick_s0","start_yoga"],["kick_s1","kick_s2"],["kick_s2","kick_s3"],["kick_s2","legs_n"],["kick_s3","kick_s4"],["mix1_n","mix_s0"],["mix2_n","mix_s1"],["mix3_n","mix_s3"],["mix_s0","mix_s1"],["mix_s0","start_cyc"],["mix_s1","mix_s2"],["mix_s2","mix_s3"],["mix_s3","mix_s4"]];
+const WEB = [{"id":"h0","x":0.0,"y":-78.0,"t":"s","fx":{"hp":5}},{"id":"h1","x":67.5,"y":-39.0,"t":"s","fx":{"tough":0.02}},{"id":"h2","x":67.5,"y":39.0,"t":"s","fx":{"hp":5}},{"id":"h3","x":0.0,"y":78.0,"t":"s","fx":{"tough":0.02}},{"id":"h4","x":-67.5,"y":39.0,"t":"s","fx":{"hp":5}},{"id":"h5","x":-67.5,"y":-39.0,"t":"s","fx":{"tough":0.02}},{"id":"heart_n","x":0,"y":0,"t":"n","skill":"heart"},{"id":"start_yoga","x":0.0,"y":-150.0,"t":"c","cls":"yoga"},{"id":"start_bb","x":-129.9,"y":75.0,"t":"c","cls":"bb"},{"id":"start_cyc","x":129.9,"y":75.0,"t":"c","cls":"cyc"},{"id":"box_s0","x":-193.0,"y":34.0,"t":"s","fx":{"jab":0.05}},{"id":"box1_n","x":-197.5,"y":8.4,"t":"n","skill":"box1","req":null},{"id":"box_s1","x":-234.4,"y":41.3,"t":"s","fx":{"jab":0.05}},{"id":"box2_n","x":-229.9,"y":66.9,"t":"n","skill":"box2","req":"box1"},{"id":"box_s2","x":-275.7,"y":48.6,"t":"s","fx":{"stam":0.1}},{"id":"handspd_n","x":-280.2,"y":23.0,"t":"n","skill":"handspd","req":"box2"},{"id":"box_s3","x":-317.1,"y":55.9,"t":"s","fx":{"jab":0.05}},{"id":"box3_n","x":-312.6,"y":81.5,"t":"n","skill":"box3","req":"handspd"},{"id":"box_s4","x":-358.5,"y":63.2,"t":"s","fx":{"jab":0.05}},{"id":"k_glass","x":-405.7,"y":71.5,"t":"k","name":"GLASS JAW","desc":"+40% damage. you take 25% more.","fx":{"dmg":0.4,"tough":-0.25}},{"id":"kick_s0","x":-60.6,"y":-186.4,"t":"s","fx":{"kick":0.05}},{"id":"kick1_n","x":-35.9,"y":-194.4,"t":"n","skill":"kick1","req":null},{"id":"kick_s1","x":-73.5,"y":-226.4,"t":"s","fx":{"kick":0.05}},{"id":"kick2_n","x":-98.2,"y":-218.4,"t":"n","skill":"kick2","req":"kick1"},{"id":"kick_s2","x":-86.5,"y":-266.3,"t":"s","fx":{"reach":3}},{"id":"legs_n","x":-61.8,"y":-274.3,"t":"n","skill":"legs","req":"kick2"},{"id":"kick_s3","x":-99.5,"y":-306.2,"t":"s","fx":{"kick":0.05}},{"id":"kick3_n","x":-124.2,"y":-298.2,"t":"n","skill":"kick3","req":"legs"},{"id":"kick_s4","x":-112.5,"y":-346.2,"t":"s","fx":{"kick":0.05}},{"id":"k_wind","x":-127.3,"y":-391.8,"t":"k","name":"SECOND WIND","desc":"once per area, dropping under 30% health heals 30 and refills stamina. -15 max health.","fx":{"hp":-15}},{"id":"mix_s0","x":193.0,"y":34.0,"t":"s","fx":{"dmg":0.03}},{"id":"mix1_n","x":188.5,"y":59.6,"t":"n","skill":"mix1","req":null},{"id":"mix_s1","x":234.4,"y":41.3,"t":"s","fx":{"dmg":0.03}},{"id":"mix2_n","x":238.9,"y":15.7,"t":"n","skill":"mix2","req":"mix1"},{"id":"mix_s2","x":275.7,"y":48.6,"t":"s","fx":{"clinch":0.1}},{"id":"flow_n","x":271.2,"y":74.2,"t":"n","skill":"flow","req":"mix2"},{"id":"mix_s3","x":317.1,"y":55.9,"t":"s","fx":{"dmg":0.03}},{"id":"mix3_n","x":321.6,"y":30.3,"t":"n","skill":"mix3","req":"flow"},{"id":"mix_s4","x":358.5,"y":63.2,"t":"s","fx":{"dmg":0.03}},{"id":"k_brawl","x":405.7,"y":71.5,"t":"k","name":"BRAWLER'S INSTINCT","desc":"every third hit of a combo staggers them. combos cost 30% more stamina.","fx":{}},{"id":"hvy_s0","x":0.0,"y":150.0,"t":"s","fx":{"heavyK":0.06}},{"id":"protein_n","x":-26.0,"y":150.0,"t":"n","skill":"protein","req":null},{"id":"hvy_s1","x":0.0,"y":192.0,"t":"s","fx":{"heavyK":0.06}},{"id":"charge_n","x":26.0,"y":192.0,"t":"n","skill":"charge","req":null},{"id":"hvy_s2","x":0.0,"y":234.0,"t":"s","fx":{"furyK":0.1}},{"id":"launch_n","x":-26.0,"y":234.0,"t":"n","skill":"launch","req":null},{"id":"hvy_s3","x":0.0,"y":276.0,"t":"s","fx":{"heavyK":0.06}},{"id":"quake_n","x":26.0,"y":276.0,"t":"n","skill":"quake","req":"charge"},{"id":"hvy_s4","x":0.0,"y":318.0,"t":"s","fx":{"heavyK":0.06}},{"id":"k_iron","x":0.0,"y":366.0,"t":"k","name":"IRON WILL","desc":"nothing knocks you down. you can not dodge.","fx":{"tough":0.05}},{"id":"temper_n","x":30.0,"y":234.0,"t":"n","skill":"temper","req":null},{"id":"air_s0","x":70.4,"y":-132.4,"t":"s","fx":{"airK":0.06}},{"id":"hang_n","x":93.4,"y":-120.2,"t":"n","skill":"hang","req":null},{"id":"air_s1","x":90.1,"y":-169.5,"t":"s","fx":{"airK":0.06}},{"id":"parkour_n","x":67.1,"y":-181.7,"t":"n","skill":"parkour","req":null},{"id":"air_s2","x":109.9,"y":-206.6,"t":"s","fx":{"speed":0.04}},{"id":"wallkick_n","x":132.9,"y":-194.4,"t":"n","skill":"wallkick","req":"parkour"},{"id":"air_s3","x":129.6,"y":-243.7,"t":"s","fx":{"airK":0.06}},{"id":"dfa_n","x":106.6,"y":-255.9,"t":"n","skill":"dfa","req":null},{"id":"air_s4","x":149.3,"y":-280.8,"t":"s","fx":{"airK":0.06}},{"id":"k_berserk","x":171.8,"y":-323.2,"t":"k","name":"BERSERKER","desc":"fury fills twice as fast and hits 25% harder. blocking costs double stamina.","fx":{"furyK":1,"blockCost":1}},{"id":"cutter_n","x":83.4,"y":-220.7,"t":"n","skill":"cutter","req":null},{"id":"def_s0","x":-129.9,"y":-75.0,"t":"s","fx":{"tough":0.03}},{"id":"skin_n","x":-116.9,"y":-97.5,"t":"n","skill":"skin","req":null},{"id":"def_s1","x":-166.3,"y":-96.0,"t":"s","fx":{"parry":2}},{"id":"slowdodge_n","x":-179.3,"y":-73.5,"t":"n","skill":"slowdodge","req":null},{"id":"def_s2","x":-202.6,"y":-117.0,"t":"s","fx":{"witchK":0.2}},{"id":"dash_n","x":-189.6,"y":-139.5,"t":"n","skill":"dash","req":null},{"id":"def_s3","x":-239.0,"y":-138.0,"t":"s","fx":{"tough":0.03}},{"id":"whistle_n","x":-252.0,"y":-115.5,"t":"n","skill":"whistle","req":null},{"id":"def_s4","x":-275.4,"y":-159.0,"t":"s","fx":{"stam":0.1}},{"id":"k_second","x":-317.0,"y":-183.0,"t":"k","name":"UNTOUCHABLE","desc":"a much wider parry window, and perfect parries and dodges heal 8. normal blocks let 30% through.","fx":{"parry":4}},{"id":"weapons_n","x":-151.3,"y":-122.0,"t":"n","skill":"weapons","req":null},{"id":"sprint_n","x":-224.0,"y":-164.0,"t":"n","skill":"sprint","req":"dash"},{"id":"cardio_n","x":-288.4,"y":-136.5,"t":"n","skill":"cardio","req":null},{"id":"ab_gigafist","x":105.9,"y":135.5,"t":"a","skill":"gigafist"},{"id":"ab_stylengine","x":133.0,"y":170.2,"t":"a","skill":"stylengine"},{"id":"ab_tornado","x":160.1,"y":204.9,"t":"a","skill":"tornado"},{"id":"ab_vampire","x":187.2,"y":239.6,"t":"a","skill":"vampire"},{"id":"ab_magnet","x":-96.2,"y":142.6,"t":"a","skill":"magnet"},{"id":"ab_explode","x":-120.8,"y":179.1,"t":"a","skill":"explode"},{"id":"ab_wmaster","x":-145.4,"y":215.5,"t":"a","skill":"wmaster"},{"id":"ab_ironskin","x":-170.0,"y":252.0,"t":"a","skill":"ironskin"},{"id":"ab_djump","x":193.7,"y":-86.2,"t":"a","skill":"djump"},{"id":"ab_bullet","x":233.9,"y":-104.1,"t":"a","skill":"bullet"},{"id":"ab_meteor","x":274.1,"y":-122.0,"t":"a","skill":"meteor"},{"id":"ab_fengine","x":314.3,"y":-139.9,"t":"a","skill":"fengine"}];
+const WEB_LINKS = [["ab_bullet","ab_djump"],["ab_bullet","ab_meteor"],["ab_djump","mix_s0"],["ab_explode","ab_magnet"],["ab_explode","ab_wmaster"],["ab_fengine","ab_meteor"],["ab_gigafist","ab_stylengine"],["ab_gigafist","start_cyc"],["ab_ironskin","ab_wmaster"],["ab_magnet","start_bb"],["ab_stylengine","ab_tornado"],["ab_tornado","ab_vampire"],["air_s0","air_s1"],["air_s0","h1"],["air_s0","hang_n"],["air_s0","start_cyc"],["air_s0","start_yoga"],["air_s1","air_s2"],["air_s1","parkour_n"],["air_s2","air_s3"],["air_s2","cutter_n"],["air_s2","wallkick_n"],["air_s3","air_s4"],["air_s3","dfa_n"],["air_s4","k_berserk"],["box1_n","box_s0"],["box2_n","box_s1"],["box3_n","box_s3"],["box_s0","box_s1"],["box_s0","start_bb"],["box_s1","box_s2"],["box_s2","box_s3"],["box_s2","handspd_n"],["box_s3","box_s4"],["box_s4","k_glass"],["cardio_n","def_s4"],["charge_n","hvy_s1"],["dash_n","def_s2"],["def_s0","def_s1"],["def_s0","h5"],["def_s0","skin_n"],["def_s0","start_bb"],["def_s0","start_yoga"],["def_s1","def_s2"],["def_s1","slowdodge_n"],["def_s1","weapons_n"],["def_s2","def_s3"],["def_s3","def_s4"],["def_s3","sprint_n"],["def_s3","whistle_n"],["def_s4","k_second"],["flow_n","mix_s2"],["h0","h1"],["h0","h5"],["h0","start_yoga"],["h1","h2"],["h1","heart_n"],["h2","h3"],["h2","start_cyc"],["h3","h4"],["h3","heart_n"],["h3","hvy_s0"],["h4","h5"],["h4","start_bb"],["h5","heart_n"],["hvy_s0","hvy_s1"],["hvy_s0","protein_n"],["hvy_s0","start_bb"],["hvy_s0","start_cyc"],["hvy_s1","hvy_s2"],["hvy_s2","hvy_s3"],["hvy_s2","launch_n"],["hvy_s2","temper_n"],["hvy_s3","hvy_s4"],["hvy_s3","quake_n"],["hvy_s4","k_iron"],["k_brawl","mix_s4"],["k_wind","kick_s4"],["kick1_n","kick_s0"],["kick2_n","kick_s1"],["kick3_n","kick_s3"],["kick_s0","kick_s1"],["kick_s0","start_yoga"],["kick_s1","kick_s2"],["kick_s2","kick_s3"],["kick_s2","legs_n"],["kick_s3","kick_s4"],["mix1_n","mix_s0"],["mix2_n","mix_s1"],["mix3_n","mix_s3"],["mix_s0","mix_s1"],["mix_s0","start_cyc"],["mix_s1","mix_s2"],["mix_s2","mix_s3"],["mix_s3","mix_s4"]];
 /*END_WEB_DATA*/
 /* ======================= THE SKILL WEB =======================
    One constellation for everyone, each class starting on its own side of it (yoga by KICKS,
@@ -9736,65 +9755,78 @@ function wakeBubble(txt, x, y, col, k) {                  // a speech or thought
 function drawWake() {
   const w = wake, t = w.t;
   // the camera: the whole room, in on the bed when the alarm goes, then over to the gym bag
-  const tgt = t < 230 ? [1.25, 230, 170] : t < 830 ? [2.1, 170, 186] : [2.1, 392, 206];
+  // (everything at real scale: he is ~44px tall, so a metre is ~24px - a double bed is ~50px long)
+  const tgt = t < 230 ? [2.0, 236, 194] : t < 830 ? [3.3, 182, 206] : [3.3, 304, 212];
   if (!w.cam) w.cam = tgt.slice();
   for (let i = 0; i < 3; i++) w.cam[i] += (tgt[i] - w.cam[i]) * (t < 830 ? 0.04 : 0.03);
   const [ck, cx, cy] = w.cam, toScr = (x, y) => [(x - cx) * ck + LW / 2, (y - cy) * ck + LH / 2];
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, LW, LH);
   ctx.save(); ctx.translate(LW / 2, LH / 2); ctx.scale(ck, ck); ctx.translate(-cx, -cy);
+  const FRr = (x, y, ww, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, ww, h); };
   // the room: night, then the first grey of dawn
   const dawn = clamp((t - 300) / 500, 0, 1);
-  ctx.fillStyle = dawn > 0.5 ? '#2a2847' : '#1b1932'; ctx.fillRect(-300, -200, LW + 600, LH + 400);   // bigger than the screen: the camera moves
-  ctx.fillStyle = '#231f3c'; ctx.fillRect(-300, 214, LW + 600, 300);                                  // floor
-  ctx.fillStyle = '#2e2950'; for (let x = -280; x < LW + 300; x += 40) ctx.fillRect(x, 214, 1, 300);
-  // window: night sky warming up, with the city out there
-  ctx.fillStyle = '#3a3360'; ctx.fillRect(316, 40, 120, 92);
-  ctx.fillStyle = dawn > 0.66 ? '#6b5a8e' : dawn > 0.33 ? '#46407a' : '#151530'; ctx.fillRect(322, 46, 108, 80);
-  ctx.fillStyle = '#ff9e80'; if (dawn > 0.5) { ctx.globalAlpha = (dawn - 0.5) * 1.4; ctx.fillRect(322, 112, 108, 14); ctx.globalAlpha = 1; }
-  ctx.fillStyle = '#0d0b1e'; [[326, 96, 14, 30], [344, 86, 18, 40], [366, 100, 12, 26], [382, 80, 20, 46], [406, 94, 20, 32]].forEach(([x, y, ww, h]) => ctx.fillRect(x, y, ww, h));
-  ctx.fillStyle = '#ffd23f'; [[330, 104], [350, 94], [350, 110], [388, 90], [392, 104], [410, 102]].forEach(([x, y], i) => { if ((i + (t >> 6)) % 3) ctx.fillRect(x, y, 2, 2); });
-  ctx.fillStyle = '#3a3360'; ctx.fillRect(374, 46, 4, 80); ctx.fillRect(322, 84, 108, 3);
-  // nightstand and the clock
-  ctx.fillStyle = '#4e3b2e'; ctx.fillRect(40, 182, 50, 48); ctx.fillStyle = '#3e2e24'; ctx.fillRect(44, 200, 42, 2);
-  ctx.fillStyle = '#111'; ctx.fillRect(48, 166, 34, 16);
-  const alarm = t >= 250 && t < 332, time = t < 250 ? '05:59' : '06:00';
-  ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
-  ctx.fillStyle = alarm && (t >> 3) % 2 ? '#330000' : '#ff3b3b'; ctx.fillText(time, 65, 178);
-  if (alarm) { ctx.fillStyle = '#ff3b3b'; ctx.font = 'bold 8px monospace'; ctx.fillText((t >> 3) % 2 ? 'BEEP BEEP' : '', 65, 158); }
-  // the bed: headboard, pillows, the two of them, the blanket over them
-  ctx.fillStyle = '#5d4037'; ctx.fillRect(100, 150, 12, 80); ctx.fillRect(370, 190, 8, 40);
-  ctx.fillStyle = '#6d4c41'; ctx.fillRect(108, 196, 268, 10);
-  ctx.fillStyle = '#e0e0f0'; ctx.fillRect(114, 176, 56, 14); ctx.fillRect(114, 186, 52, 12);
+  FRr(-300, -200, LW + 600, LH + 400, dawn > 0.5 ? '#2a2847' : '#1b1932');                // the wall
+  FRr(-300, 212, LW + 600, 300, '#231f3c');                                              // floor
+  FRr(-300, 211, LW + 600, 2, '#3a3360');                                                // skirting board
+  ctx.fillStyle = '#2e2950'; for (let x = -280; x < LW + 300; x += 14) ctx.fillRect(x, 213, 1, 300);   // floorboards
+  FRr(160, 230, 100, 6, '#2b2548');                                                      // a rug by the bed
+  // the window (1.2m square, sill at waist height), the city waking up outside
+  FRr(232, 156, 34, 34, '#3a3360');
+  FRr(234, 158, 30, 30, dawn > 0.66 ? '#6b5a8e' : dawn > 0.33 ? '#46407a' : '#151530');
+  if (dawn > 0.5) { ctx.globalAlpha = (dawn - 0.5) * 1.4; FRr(234, 182, 30, 6, '#ff9e80'); ctx.globalAlpha = 1; }
+  ctx.fillStyle = '#0d0b1e'; [[235, 176, 5, 12], [241, 172, 6, 16], [248, 178, 4, 10], [253, 170, 6, 18], [260, 175, 4, 13]].forEach(([x, y, ww, h]) => ctx.fillRect(x, y, ww, h));
+  ctx.fillStyle = '#ffd23f'; [[237, 180], [243, 175], [243, 181], [255, 173], [256, 179], [261, 178]].forEach(([x, y], i) => { if ((i + (t >> 6)) % 3) ctx.fillRect(x, y, 1, 1); });
+  FRr(248, 158, 2, 30, '#3a3360'); FRr(234, 172, 30, 1, '#3a3360'); FRr(230, 190, 38, 2, '#4a4270');   // frame, sill
+  // the wardrobe in the corner (1.9m tall)
+  FRr(318, 166, 26, 46, '#4e3b2e'); FRr(330, 168, 1, 42, '#3e2e24'); FRr(327, 186, 2, 4, '#8d6e63'); FRr(332, 186, 2, 4, '#8d6e63'); FRr(316, 164, 30, 3, '#5d4a3a');
+  // nightstand (half a metre) and the alarm clock on it
+  FRr(132, 216, 14, 12, '#4e3b2e'); FRr(133, 221, 12, 1, '#3e2e24'); FRr(138, 218, 2, 1, '#8d6e63');
+  const alarm = t >= 250 && t < 332;
+  FRr(134, 211, 10, 5, '#111'); FRr(135, 212, 8, 3, alarm && (t >> 3) % 2 ? '#330000' : '#5a0d0d');
+  // the bed: a double, about 2m long - headboard, mattress, footboard
+  const BX = 150, BT = 214;                                              // headboard x, mattress top
+  FRr(BX, 196, 4, 32, '#5d4037'); FRr(BX - 1, 195, 6, 2, '#6d4c41');     // headboard
+  FRr(BX + 54, 208, 3, 20, '#5d4037');                                   // footboard
+  FRr(BX + 4, BT + 6, 50, 4, '#6d4c41'); FRr(BX + 5, BT + 10, 2, 4, '#4e342e'); FRr(BX + 50, BT + 10, 2, 4, '#4e342e');   // frame and legs
+  FRr(BX + 4, BT, 50, 6, '#d6d4e8');                                     // mattress
+  FRr(BX + 5, BT - 4, 14, 5, '#eceaf6'); FRr(BX + 5, BT - 1, 14, 1, '#c9c6dc');   // pillows
   const up = t >= 332, look = up ? (t < 420 ? ((t >> 5) % 2 ? 1 : -1) : 1) : 0;
-  const sat = up && t < 820, lyingBack = t >= 820;
-  // her: asleep, facing away
-  const by = sat ? 198 : 190;
-  ctx.save(); ctx.beginPath(); ctx.rect(100, 140, 52, 60); ctx.clip();             // only heads on the pillows; the rest is under the covers
-  drawCharFrame('wife', 'idle0', 146, 214, 1, null, -Math.PI / 2, null);
-  if (!sat) drawCharFrame(playerSheet(), 'idle0', 150, 222, 1, null, -Math.PI / 2, null);
+  const sat = up && t < 820;
+  // her: asleep, head on the pillow; only the heads show above the duvet
+  ctx.save(); ctx.beginPath(); ctx.rect(BX + 2, BT - 30, 22, 30); ctx.clip();
+  // (a sprite turned on its side spins round its middle: the head ends up half a body-length left of x)
+  drawCharFrame('wife', 'idle0', BX + 29, BT + 21, 1, null, -Math.PI / 2, null);                    // her, further back on the pillow
+  if (!sat) drawCharFrame(playerSheet(), 'idle0', BX + 33, BT + 22, 1, null, -Math.PI / 2, null);   // him, in front
   ctx.restore();
-  if (sat) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, LW, by + 1); ctx.clip();       // sat bolt upright, the blanket round his waist
-    drawCharFrame(playerSheet(), look ? 'idle0' : 'frontIdle', 160, 224, look || 1, null, 0, null); ctx.restore(); }
-  ctx.fillStyle = '#5c6bc0'; ctx.fillRect(146, by, 226, 206 - by + 2);                                // the blanket
-  ctx.fillStyle = '#7986cb'; ctx.fillRect(146, by, 226, 3);
-  ctx.fillStyle = '#3f51b5'; for (let x = 160; x < 370; x += 26) ctx.fillRect(x, by + 5, 12, 2);
-  // the gym bag in the corner, and something golden in it
-  ctx.fillStyle = '#263238'; ctx.fillRect(404, 214, 46, 20); ctx.fillStyle = '#37474f'; ctx.fillRect(410, 208, 34, 8);
-  ctx.fillStyle = '#ffd23f'; ctx.fillRect(432, 210, 5, 3);
-  if ((t > 850 && t < 880) || (t > 895 && t < 925)) { ctx.fillStyle = '#fff'; const g = (t % 30) / 3; ctx.fillRect(434, 206 - g, 1, 2 + g * 2); ctx.fillRect(432 - g, 211, 2 + g * 2, 1); }
-  // zzz while they sleep (drawn in the room, under the camera)
-  if (t < 250) { ctx.font = 'bold 8px monospace'; ctx.fillStyle = '#9fa8da'; ctx.textAlign = 'left';
-    for (let i = 0; i < 3; i++) { const k = ((t + i * 40) % 120) / 120; ctx.globalAlpha = 1 - k; ctx.fillText('z', 176 + k * 18 + i * 3, 176 - k * 30); } ctx.globalAlpha = 1; }
-  if (up && t < 350) { ctx.font = 'bold 14px monospace'; ctx.fillStyle = '#ffd23f'; ctx.textAlign = 'center'; ctx.fillText('!!', 164, 166); }
+  const dy = sat ? BT - 3 : BT - 6;                                       // the duvet: pulled down to his waist when he sits up
+  if (sat) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, LW, dy + 1); ctx.clip();          // sat bolt upright
+    drawCharFrame(playerSheet(), look ? 'idle0' : 'frontIdle', BX + 22, BT + 20, look || 1, null, 0, null); ctx.restore(); }
+  const DX = sat ? BX + 17 : BX + 21;
+  FRr(DX, dy, BX + 55 - DX, BT + 6 - dy, '#5c6bc0'); FRr(DX, dy, BX + 55 - DX, 2, '#7986cb');
+  ctx.fillStyle = '#3f51b5'; for (let x = BX + 22; x < BX + 52; x += 9) ctx.fillRect(x, dy + 3, 4, 1);
+  FRr(BX + 53, dy + 1, 3, BT + 8 - dy, '#4e5bb0');                       // hanging over the end
+  // the gym bag on the floor (60cm), and something golden in it
+  FRr(294, 220, 18, 9, '#263238'); FRr(297, 217, 12, 4, '#37474f'); FRr(300, 216, 6, 1, '#546e7a');
+  FRr(305, 218, 2, 1, '#ffd23f');
+  if ((t > 850 && t < 880) || (t > 895 && t < 925)) { ctx.fillStyle = '#fff'; const g = (t % 30) / 6; ctx.fillRect(306, 216 - g, 1, 1 + g * 2); ctx.fillRect(305 - g, 218, 1 + g * 2, 1); }
+  // zzz while they sleep
+  if (t < 250) { ctx.font = 'bold 5px monospace'; ctx.fillStyle = '#9fa8da'; ctx.textAlign = 'left';
+    for (let i = 0; i < 3; i++) { const k = ((t + i * 40) % 120) / 120; ctx.globalAlpha = 1 - k; ctx.fillText('z', BX + 18 + k * 10 + i * 2, BT - 6 - k * 16); } ctx.globalAlpha = 1; }
   ctx.restore();
+  // the clock face, drawn crisp at screen size where the clock is
+  { const [sx, sy] = toScr(139, 213), time = t < 250 ? '05:59' : '06:00';
+    ctx.font = 'bold ' + Math.max(6, Math.round(ck * 3)) + 'px monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = alarm && (t >> 3) % 2 ? '#550000' : '#ff3b3b'; ctx.fillText(time, sx, sy + ck * 1.5);
+    if (alarm && (t >> 3) % 2) { ctx.fillStyle = '#ff3b3b'; ctx.font = 'bold 8px monospace'; ctx.fillText('BEEP BEEP', sx, sy - ck * 4); } }
+  if (up && t < 350) { const [sx, sy] = toScr(BX + 22, BT - 30); ctx.font = 'bold 14px monospace'; ctx.fillStyle = '#ffd23f'; ctx.textAlign = 'center'; ctx.fillText('!!', sx, sy); }
   // what's said
   const B = (from, to, txt, x, y, col) => { if (t >= from && t < to) { const [sx, sy] = toScr(x, y); wakeBubble(txt, sx, clamp(sy, 22, LH - 10), col, t - from); } };
-  B(370, 470, '(...the gym. the burger place. the ARMY...?)', 168, 160, '#ffd23f');
-  B(480, 620, 'mmh... go back to sleep, love.', 130, 176, '#ff80ab');
-  B(620, 740, "your first class isn't till tomorrow.", 130, 176, '#ff80ab');
-  B(745, 835, '(...tomorrow.)', 168, 166, '#ffd23f');
-  B(860, 940, '(...just a dream.)', 392, 190, '#ffd23f');
-  B(940, 1010, '(...right?)', 400, 190, '#ffd23f');
+  B(370, 470, '(...the gym. the burger place. the ARMY...?)', BX + 22, BT - 32, '#ffd23f');
+  B(480, 620, 'mmh... go back to sleep, love.', BX + 10, BT - 12, '#ff80ab');
+  B(620, 740, "your first class isn't till tomorrow.", BX + 10, BT - 12, '#ff80ab');
+  B(745, 835, '(...tomorrow.)', BX + 22, BT - 32, '#ffd23f');
+  B(860, 940, '(...just a dream.)', 303, 208, '#ffd23f');
+  B(940, 1010, '(...right?)', 306, 208, '#ffd23f');
   // in from white, out to black
   if (t < 70) { ctx.fillStyle = '#fff'; ctx.globalAlpha = 1 - t / 70; ctx.fillRect(0, 0, LW, LH); ctx.globalAlpha = 1; }
   if (t > WAKE_END - 60) { ctx.fillStyle = '#000'; ctx.globalAlpha = clamp((t - (WAKE_END - 60)) / 60, 0, 1); ctx.fillRect(0, 0, LW, LH); ctx.globalAlpha = 1; }
@@ -11286,7 +11318,7 @@ function slotLine(cp) {
 }
 /* which version is this? release_live stamps the number in; the title shows it, and asks the
    public site whether there's a newer one (the app only updates when it fully starts) */
-const BUILD = '202611272312', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
+const BUILD = '202611280040', LIVE_URL = 'https://martyman798-netizen.github.io/last-class-game/';
 let newerBuild = null, buildAsked = 0;
 function askForNewerBuild() {
   if (!/^\d{12}$/.test(BUILD) || Date.now() - buildAsked < 60000) return;
@@ -11605,7 +11637,7 @@ function boot() {
     menuState: () => ({ state, menu: menu ? menu.kind : null, sel: menu ? menu.sel : null, titleSel, items: titleItems(), set: Object.assign({}, SET), pad: GP.active, cp: checkpoint() }),
     padTest: (k, down) => { GP.active = true; if (down) keyDown(k, false); else keyUp(k); },
     props: () => props.map(o => ({ t: o.type, x: Math.round(o.x), y: Math.round(o.y),
-                                   z: Math.round(o.z), vx: +o.vx.toFixed(2), hp: o.hp })),
+                                   z: Math.round(o.z), vx: +o.vx.toFixed(2), hp: o.hp, w: o.w, h: o.h, d: o.d })),
     putProp: (i, x, y) => { if (props[i]) { props[i].x = x; props[i].y = y; } },
     foes: () => enemies.map(e => ({ t: e.type, st: e.st, mv: e.moveName || null,
                                     cool: Math.round(e.cool), q: e.queue.length, f: e.f,
